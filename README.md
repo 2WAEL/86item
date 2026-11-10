@@ -1,0 +1,171 @@
+# 86item — داشبورد الايتمات الموقوفة (Standalone Firebase App)
+
+التطبيق بقى **Standalone بالكامل**: مفيش Google Apps Script ومفيش Google Sheets.
+كل الداتا في **Cloud Firestore** والدخول عن طريق **Firebase Authentication**.
+
+```
+┌────────────────────────────────────┐         ┌──────────────────┐
+│  Firebase Hosting                  │         │  Firebase        │
+│  public/index.html                 │────────▶│  Auth (Email)    │
+│  public/firebase-backend.js        │◀────────│  Firestore       │
+│  (الواجهة كما هي + طبقة البيانات)  │         └──────────────────┘
+└────────────────────────────────────┘
+```
+
+**الواجهة (UI) ما اتغيرتش**: نفس الـ HTML ونفس الـ CSS ونفس التبويبات والمودالات
+والتنبيهات الصوتية والرسوم البيانية (Chart.js). اللي اتغيّر هو طبقة البيانات بس.
+
+---
+
+## 1)Files
+
+| الملف | الوصف |
+|---|---|
+| `public/index.html` | الواجهة كاملة (HTML + CSS inline + JavaScript). |
+| `public/firebase-backend.js` | طبقة البيانات: Firestore + Firebase Authentication (كل الـ actions). |
+| `firestore.rules` | قواعد Firestore (لازم مستخدم مسجّل دخول). |
+| `firebase.json` | إعدادات Hosting + Firestore rules. |
+| `.firebaserc` | ربط المشروع `item-f8564`. |
+
+---
+
+## 2)⚠️ خطوة لازم تعملها قبل أي حاجة: فعّل Email/Password
+
+من **Firebase Console**:
+
+```
+Authentication → Sign-in method → Email/Password → Enable
+```
+
+من غير الخطوة دي، شاشة الدخول هتطلع بالرسالة:
+> «تسجيل الدخول بالإيميل مش مفعّل. من Firebase Console: Authentication ▸ Sign-in method ▸ Email/Password ▸ Enable.»
+
+> ملاحظة: الـ Anonymous sign-in **مش** مطلوب — التطبيق بيستخدم Email/Password بس.
+
+---
+
+## 3) أول دخول (Bootstrap)
+
+1. افتح الموقع وسجّل دخول بـ **أي إيميل** + كلمة سر من اختيارك (6 حروف على الأقل).
+2. **أول حساب يسجّل دخول في النظام** بيتحوّل تلقائيًا لـ **مدير نظام (admin)**.
+3. في نفس اللحظة بتتعمل سبع البذرة تلقائيًا:
+   - مطعم `MAIN` ("المطعم الرئيسي")
+   - 4 فروع: `DOKKI` / `ZAMALEK` / `MERRYLAND` / `ELSAHEL`
+   - 4 أسباب: نفاد الخام / عطل في المعدات / مشكلة جودة / أخرى
+   - أوقات تحضير وتوصيل (10 + 30 دقيقة) لكل فرع
+4. بعد كده، أي حساب جديد **بينشأ موقوف** لحد ما الأدمن يفعّله من ⚙️ إدارة المستخدمين.
+
+> اسم المستخدم في شاشة الدخول: تقدر تكتب **الإيميل كامل** (مثل `ahmed@company.com`)
+> أو تكتب **الاسم بس** (مثل `ahmed`) — في الحالة التانية بيتحوّل لـ `ahmed@item-f8564.firebaseapp.com`.
+
+---
+
+## 4) إدارة المستخدمين (Firebase Auth)
+
+الباسوردات كلها متmanageة من **Firebase Authentication** (مش متخزّنة في Firestore).
+اللي في Firestore هو **الملف الشخصي** بس: الدور / الفرع / المطعم / التفعيل.
+
+| العملية | إزاي |
+|---|---|
+| **إضافة مستخدم** | ⚙️ إدارة المستخدمين → اكتب الإيميل + الدور + الفرع → حفظ. الحساب بينشأ أول ما يسجّل هو دخول بالإيميل ده. |
+| **تفعيل / إيقاف** | نفس الشاشة → checkbox "اليوزر نشط". الإيقاف بيلغي جلسات المستخدم فورًا. |
+| **تغيير باسورد حسابك** | نفس الشاشة → عدّل حسابك الحالي وحط كلمة سر جديدة (بتتغير من Firebase Auth مباشرة). |
+| **باسورد مستخدم تاني** | مش متاح من التطبيق — الأدمن يطلب من المستخدم يعمل "نسيت كلمة السر" من Firebase Console، أو يمسح الحساب ويعمله من جديد. |
+
+**العزل بين الحسابات** بيتعمل داخل التطبيق (backend) على أساس الدور:
+مانجمنت (كل حاجة) / دسباتشر فرع (فرعه بس) / ايجينت (قراءة بس).
+
+---
+
+## 5) مجموعات Firestore
+
+| Collection | المحتوى |
+|---|---|
+| `restaurants` | المطاعم: `{ id, name, active, createdAt, createdBy, seq }` |
+| `branches` | الفروع: `{ key, name, restaurant, active, openSec, closeSec, days[7], ver, … }` |
+| `menu_items` | المنيو: `{ restaurant, branch(''=كل الفروع), item, itemKey, category, price, available, active, seq }` |
+| `reasons` | الأسباب: `{ restaurant, branch(''=كل الفروع), name, nameKey, enabled, seq }` |
+| `item_stoppages` | سجلات الإيقاف: `{ date, item, itemKey, stopSec, startSec, reason, note, restaurant, branch, branchName, open, seq }` |
+| `branch_times` | أوقات التحضير/التوصيل (سجل تاريخي): `{ branch, restaurant, prepMin, delMin, by, at, seq }` |
+| `users` | الملفات الشخصية: `{ username, usernameKey, email, uid, role, branch, restaurant, isAdmin, active, ver }` |
+| `audit_logs` | سجل العمليات: `{ at, by, role, action, target, details, result, ref }` |
+| `notifications` | الإشعارات: `{ at, restaurant, branch, roles, targetUser, title, body, kind, severity, readBy[] }` |
+| `shift_log` | ترحيل الشيفت: `{ at, branch, day, open, close, stops, closed, actor, note }` |
+| `error_log` | الأخطاء: `{ at, action, by, code, message, detail, stack }` |
+
+**ملاحظات:**
+- `item_stoppages.startSec = null` → الصنف لسه موقوف؛ ومن غيره (= وقت التشغيل) يبقى اشتغل.
+- كل صف في `branch_times` هو نسخة تاريخية؛ الداشبورد بياخد آخر صف.
+- أوقات العمل اليومية في `branches.days[7]` (0 = الأحد).
+- `users.ver` بيتغير مع كل تعديل → الجلسات القديمة بتبطل فورًا.
+
+---
+
+## 6) realtime (بدل الاستطلاع)
+
+الاستطلاع القديم (`pollState` كل 4 ثواني) اتشال بالكامل.
+دلوقتي التطبيق فيه **مستمع واحد** (`onSnapshot`) على كل المجموعات:
+
+- أي كتابة في Firestore بتظهر عند **كل** الأجهزة المتصلة **فورًا**.
+- الإشعارات + العداد + الصوت بيشتغلوا لحظي.
+- التحديث كمان بيحصل بالأساس: تلاقيناه في تبويبين — الإيقاف في الأول ظهر في التاني من غير أي تحديث.
+
+---
+
+## 7) النشر
+
+```bash
+cd "C:\Users\Cairo\Desktop\86item"
+
+# 1) القواعد (بعد تفعيل Email/Password)
+firebase deploy --only firestore:rules
+
+# 2) الموقع
+firebase deploy --only hosting
+```
+
+أو الاتنين مرة واحدة:
+
+```bash
+firebase deploy
+```
+
+---
+
+## 8) تشغيل محلي
+
+لازم **HTTP** (مش `file://`) لأن التطبيق بيستخدم ES Modules:
+
+```bash
+python -m http.server 8765
+# أو
+npx serve -l 8765
+```
+
+ثم افتح `http://localhost:8765/`.
+
+> ⚠️ Firestore Rules بتفضل شغالة من `localhost` طالما في مستخدم مسجّل دخول
+> (وضع الـ Auth بيعتمد على الـ origin مش على النطاق).
+
+---
+
+## 9) ملاحظات أمنية
+
+1. **كلمة السر** مش بتتخزّن في Firestore إطلاقًا — Firebase Auth بيتكفّل بيها.
+2. **قواعد Firestore** بتمنع أي حد مش مسجّل دخول يقرأ أو يكتب.
+3. **sessions**: بتتخزّن في `sessionStorage` (بتنتهي لما ت closes the tab).
+4. **العمليات الحساسة** (مسح الداتا / حذف يوزر / حذف فرع / حذف مطعم) بتطلب
+   إعادة تأكيد بكلمة السر عبر Firebase Auth.
+5. `window.FB` متاح في الكونسول للفحص السريع (مثلاً `FB.state.item_stoppages`).
+
+---
+
+## 10) مشاكل شائعة
+
+| العَرَض | السبب | الحل |
+|---|---|---|
+| «تسجيل الدخول بالإيميل مش مفعّل» | Email/Password مقفول | فعّله من الـ Console (قسم 2). |
+| «اسم المستخدم أو كلمة السر غلط» | الحساب مش موجود | أول مرة: اكتب إيميل + كلمة سر جديدة → الحساب بينشأ (موقوف لحد تفعيل الأدمن). بعد كده: كلمة السر غلط فعلاً. |
+| «تم إنشاء حسابك بنجاح، بس محتاج تفعيل» | حساب جديد | الأدمن يفعّله من ⚙️ إدارة المستخدمين. |
+| «انتهت الجلسة» | الجلسة اتقفلت / اتغيرت | سجّل دخول تاني. |
+| الصفحة مش بتتحدّث لحظي | الـ Rules مرفوضة | اتأكد إن `firebase deploy --only firestore:rules` اشتغل وإن الـ user مسجّل دخول. |

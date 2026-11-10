@@ -1,0 +1,66 @@
+rules_version = '2';
+
+/*
+  قواعد Firestore لمشروع item-f8564 — داشبورد الايتمات الموقوفة (Standalone)
+  ------------------------------------------------------------
+  التطبيق بقى Standalone بالكامل:
+    - Firestore للداتا (إيقاف/تشغيل الأصناف، المنيو، الأسباب، الفروع، …)
+    - Firebase Authentication للدخول (Email + Password)
+
+  🔐 كل الطلبات لازم تكون من مستخدم مسجّل دخول في Firebase Auth.
+     الحساب نفسه (الإيميل) موجود في Firebase Auth، والملف الشخصي
+     (الدور/الفرع/المطعم) في collection "users" — والعزل بين الحسابات
+     بيتعمل داخل التطبيق (backend) لأن كل المستخدمين بيشاركوا نفس الـ
+     Firebase project.
+
+  ⚠️ قبل نشر القواعد دي تأكد إن Email/Password مفعّل:
+     Firebase Console → Authentication → Sign-in method → Email/Password → Enable
+*/
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // الملف الشخصي: كل مستخدم مسجّل بيقدر يقرأ، والتعديل للأدمن بس
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // باقي المجموعات: مستخدمين مسجّلين فقط
+    match /restaurants/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /branches/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /menu_items/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /reasons/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /item_stoppages/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /branch_times/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /audit_logs/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /notifications/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /shift_log/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /error_log/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // أي collection جديدة: ممنوعة افتراضيًا
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

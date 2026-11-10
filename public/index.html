@@ -339,8 +339,8 @@ details.branch .body{padding:0 18px 16px}
   <form class="login-card" id="loginForm">
     <h1>الايتمات الموقوفة</h1>
     <p class="sub2">سجّل دخول بحسابك</p>
-    <label for="lgUser">اسم المستخدم</label>
-    <input id="lgUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" dir="ltr">
+    <label for="lgUser">الإيميل أو اسم المستخدم</label>
+    <input id="lgUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" dir="ltr" placeholder="admin">
     <label for="lgPass">كلمة السر</label>
     <input id="lgPass" type="password" autocomplete="current-password" dir="ltr">
     <div class="err" id="lgErr" role="alert"></div>
@@ -577,7 +577,39 @@ details.branch .body{padding:0 18px 16px}
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script>
+<script type="module">
+/* =====================================================
+   Firebase (CDN SDK v13.2.0) — التطبيق بقى Standalone
+   (Firestore للداتا + Authentication للدخول)
+   ===================================================== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-analytics.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js";
+import { getAuth, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
+import { createBackend } from "./firebase-backend.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD1MFyE26r5GhQANTsTSpAdwsAiGC4zShs",
+  authDomain: "item-f8564.firebaseapp.com",
+  projectId: "item-f8564",
+  storageBucket: "item-f8564.firebasestorage.app",
+  messagingSenderId: "573297826644",
+  appId: "1:573297826644:web:452247eda62f7c66e986c1",
+  measurementId: "G-Q87D509P3Z"
+};
+
+const app = initializeApp(firebaseConfig);
+try { getAnalytics(app); } catch (e) { /* Analytics اختياري */ }
+const db = getFirestore(app);
+window.db = db;
+
+/* Firebase Authentication — الجلسة بتخزن في sessionStorage (زيBehavior القديم) */
+const auth = getAuth(app);
+try { setPersistence(auth, browserSessionPersistence); } catch (e) { }
+
+const FB = createBackend(db, { auth: auth, emailDomain: 'item-f8564.firebaseapp.com' });
+window.FB = FB;   /* الفحص والتصحيح من الكونسول */
+
 /* =====================================================
    الحالة العامة
    ===================================================== */
@@ -867,97 +899,9 @@ function checkAdminUserField(id){
 }
 
 /* ============================================================
- *  الاتصال بالسيرفر — Google Apps Script Web App عبر fetch()
- *  ------------------------------------------------------------
- *  was google.script.run (مش موجود بره بيئة Apps Script) بقى
- *  طلبات POST عادية (fetch) على رابط الـ Web App:
- *     https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
- *
- *  ترتيب تحديد الرابط:
- *    1) ?api=<url> في عنوان الصفحة        (للتجربة السريعة)
- *    2) localStorage['gas_api_url']        (يتحفظ من الكونسول)
- *    3) GAS_WEB_APP_URL بالأسفل            (الافتراضي الثابت)
- *
- *  ⚠️ شروط لازم تتأكد منها:
- *    - الـ Web App منشور بصلاحية "أي حد" (Anyone) وإلا هيجيب صفحة
- *      تسجيل دخول Google بدل JSON.
- *    -.body بيتنسلب كـ text/plain (مش application/json) عشان المتصفح
- *      يعمل "simple request" من غير preflight — ده المتوافق مع GAS.
- * ============================================================ */
-var GAS_WEB_APP_URL = '';   /* ← الصق هنا رابط الـ Web App: https://script.google.com/macros/s/...../exec */
-var GAS_INFLIGHT = {};      /* منع تكرار نفس الطلب وهو شغال (خصوصًا الاستطلاع) */
-
-function gasApiUrl(){
-  var u='';
-  try{
-    var q=(location.search||'').match(/[?&]api=([^&]+)/);
-    if(q) u=decodeURIComponent(q[1]);
-  }catch(e){}
-  if(!u){ try{ u=localStorage.getItem('gas_api_url')||''; }catch(e){} }
-  if(!u) u=String(GAS_WEB_APP_URL||'');
-  return String(u||'').trim();
-}
-function gasSetApiUrl(u){
-  try{ if(u) localStorage.setItem('gas_api_url',u); else localStorage.removeItem('gas_api_url'); }catch(e){}
-  GAS_WEB_APP_URL=String(u||'');
-}
-/* خطأ شبكة/بروتوكول: بنعمله نفس صيغة الأخطاء اللي الواجهة بتعرفها */
-function gasError_(message, code){
-  var e=new Error(message);
-  e.business=true;
-  e.gasError=code||'NETWORK';
-  return e;
-}
-/* طلب واحد للسيرفر: {action, args, token}  →  نفس قيم google.script.run */
-function gasPost(payload, ok, fail){
-  var url=gasApiUrl();
-  if(!url){
-    fail(gasError_('لم يتم ضبط رابط الـ Web App بتاع Google Apps Script. حطه في GAS_WEB_APP_URL أو استخدم ?api=<url>.','NO_URL'));
-    return;
-  }
-  var body;
-  try{ body=JSON.stringify(payload); }
-  catch(e){ fail(gasError_('تعذر تجهيز بيانات الطلب.','BAD_REQUEST')); return; }
-
-  fetch(url,{
-    method:'POST',
-    mode:'cors',
-    redirect:'follow',
-    credentials:'omit',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:body
-  }).then(function(res){
-    return res.text().then(function(txt){
-      var data=null;
-      try{ data=JSON.parse(txt); }catch(e){}
-      if(!data || typeof data!=='object' || typeof data.ok==='undefined'){
-        /* رد مش JSON = غالبًا رابط غلط أو الـ Web App بيطلب تسجيل دخول */
-        if(/signin|accounts\.google|ServiceLogin/i.test(txt||'')){
-          throw gasError_('رابط الـ Web App بيطلب تسجيل دخول Google. انشره بصلاحية "أي حد" (Anyone).','AUTH_REQUIRED');
-        }
-        throw gasError_('رد غير متوقع من السيرفر. تأكد إن الرابط صحيح ومنشور كـ Web App بصلاحية "أي حد".','BAD_RESPONSE');
-      }
-      if(data.ok) return data.result;
-      var err=(data.error&&typeof data.error==='object')?data.error:{message:'حصل خطأ غير متوقع.'};
-      var e=new Error('__ERRV2__'+JSON.stringify({
-        ok:false,
-        kind:err.kind||'',
-        business:!!err.business,
-        code:err.code||'',
-        action:err.action||'',
-        message:err.message||'حصل خطأ غير متوقع.',
-        detail:err.detail||'',
-        stack:err.stack||'',
-        cause:err.cause||'',
-        at:err.at||'',
-        user:err.user||''
-      }));
-      throw e;
-    });
-  }).then(function(v){ ok(v); }, function(e){ fail(e); });
-}
-
-/* كل نداء للسيرفر بيمر من بوابة واحدة (تحقق جلسة + دور + Rate Limit في السيرفر). */
+ *  كل نداء للسيرفر بيمر من بوابة واحدة
+ *  (Firebase Firestore + Firebase Authentication)
+ *  ============================================================ */
 function api(fn, args, ok, fail){
   var settled=false;
   function success(r){ if(settled) return; settled=true; (ok||function(){ })(r); }
@@ -968,11 +912,9 @@ function api(fn, args, ok, fail){
     if(expired){ toLogin('انتهت الجلسة، سجّل دخول تاني.'); return; }
     if(fail) fail(e); else toastErr(e);
   }
-  /* الاستطلاع: لو الطلب السابق لسه شغال ما نبعتهوش تاني (منع تراكم الطلبات) */
-  if(fn==='pollState' && GAS_INFLIGHT[fn]){ return; }
-  GAS_INFLIGHT[fn]=1;
-  var done=function(){ GAS_INFLIGHT[fn]=0; };
-  gasPost({action:fn, args:args||[], token:TOKEN||''}, function(v){ done(); success(v); }, function(e){ done(); failure(e); });
+  try{
+    FB.api(fn, args||[], TOKEN).then(success, failure);
+  }catch(e){ failure(e); }
 }
 
 function brandLabel(){
@@ -1036,7 +978,7 @@ document.addEventListener('visibilitychange',function(){ if(!document.hidden && 
 /* =====================================================
    استطلاع لحظي لحالة الفروع ومفتاح الشيفت + تحديث كامل أبطأ.
    ===================================================== */
-var pollT=null, fullT=null, LIVE={rev:'',menu:{},fails:0,notifIds:{},notifReady:false,stopReady:false,stoppedSeen:{}};
+var pollT=null, fullT=null, RT_UNSUB=null, LIVE={rev:'',menu:{},fails:0,notifIds:{},notifReady:false,stopReady:false,stoppedSeen:{}};
 var NOTIF_AUDIO=null, NOTIF_ITEMS=[];
 var RING_T=null, RING_OSC=null, RING_GAIN=null;
 function unlockNotificationAudio(){
@@ -1159,29 +1101,25 @@ function startPolling(){
   stopPolling();
   LIVE.rev=''; LIVE.notifIds={}; LIVE.notifReady=false;
   loadNotifications(true);
-  var role=D && D.me.role, fullMs=(role==='management')?60000:45000;
-  pollT=setInterval(livePoll,4000);
-  fullT=setInterval(function(){
-    if(!TOKEN || document.hidden) return;
-    api('getDashboardData',[false,S.rest],function(d){
+  /* بدل الاستطلاع: مستمع لحظي واحد (onSnapshot) على كل مجموعات Firestore */
+  RT_UNSUB = FB.watch(
+    function(d, live){
+      if(!d) return;
       setData(d);
+      applyLive(live || {});
       if(!document.hidden && $('modal').hidden) render();
-    },function(){});
-  },fullMs);
-  setTimeout(livePoll,700);
+    },
+    function(e){ LIVE.fails++; console.warn('[realtime]', e); },
+    function(){ return S.rest; }
+  );
 }
 function stopPolling(){
+  if(RT_UNSUB){ try{ RT_UNSUB(); }catch(e){} RT_UNSUB=null; }
   if(pollT){ clearInterval(pollT); pollT=null; }
   if(fullT){ clearInterval(fullT); fullT=null; }
 }
 function livePoll(){
-  if(!TOKEN || document.hidden) return;          // التاب مخفي → استطلاع متوقف
-  api('pollState',[LIVE.rev,S.rest],function(res){
-    if(!res) return;
-    LIVE.fails=0;
-    if(res.unchanged){ setNotificationBadge(res.unread); return; }
-    applyLive(res);
-  },function(){ LIVE.fails++; });
+  /* التحديث بقى لحظي عبر onSnapshot — الدالة سيبناها للتوافق فقط */
 }
 /* خط أساس الأصناف الموقوفة: أول استطلاع بيسجّل الحالة من غير صوت، وبعدها بنرصد الجديد بس */
 function stopSeenFromBranches(list){
@@ -3369,22 +3307,22 @@ document.querySelectorAll('#gearMenu button').forEach(function(b){
   });
 });
 
-/* تسجيل الدخول / الخروج */
+/* تسجيل الدخول / الخروج — عبر Firebase Authentication */
 $('loginForm').addEventListener('submit',function(e){
   e.preventDefault();
   unlockNotificationAudio();
   var u=$('lgUser').value.trim(), p=$('lgPass').value;
   if(!u || !p){ $('lgErr').textContent='اكتب اسم المستخدم وكلمة السر.'; return; }
   $('lgBtn').disabled=true; $('lgErr').textContent=''; loading(true);
-  gasPost({action:'login', args:[u,p], token:''}, function(res){
+  FB.login(u,p).then(function(res){
     loading(false); $('lgBtn').disabled=false; $('lgPass').value='';
     TOKEN=res.token; saveToken(); onData(res.data);
-  }, function(err){
+  }).catch(function(err){
     loading(false); $('lgBtn').disabled=false; $('lgErr').textContent=errMsg(err);
   });
 });
 $('logoutBtn').addEventListener('click',function(){
-  try{ gasPost({action:'logout', args:[], token:TOKEN||''}, function(){}, function(){}); }catch(e){}
+  try{ FB.logout(); }catch(e){}
   toLogin('');
 });
 
@@ -3454,8 +3392,16 @@ document.addEventListener('click',function(e){
   if(xs){ exportXlsx(xs.getAttribute('data-xlsx')); return; }
 });
 
-/* البداية: لو فيه جلسة محفوظة نكمل بيها، غير كده شاشة الدخول */
-if(TOKEN) load(false); else toLogin('');
+/* البداية: نستعيد جلسة Firebase Auth (لو موجودة) وإلا شاشة الدخول */
+FB.restore(TOKEN).then(function(ok){
+  if(ok){ load(false); }
+  else { TOKEN=''; saveToken(); toLogin(''); }
+}).catch(function(){ TOKEN=''; saveToken(); toLogin(''); });
+
+/* لو الحساب اتقفل أو اتسجل خروج من جهاز تاني → رجوع لشاشة الدخول فورًا */
+FB.onAuthChange(function(user){
+  if(!user && D){ toLogin('انتهت الجلسة، سجّل دخول تاني.'); }
+});
 </script>
 </body>
 </html>

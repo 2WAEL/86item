@@ -3,8 +3,21 @@
     "public": "public",
     "ignore": [
       "firebase.json",
+      "firestore.rules",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "cleanUrls": true,
+    "headers": [
+      {
+        "source": "**/*.@(js|html)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
     ],
     "rewrites": [
       {
@@ -12,5 +25,8 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }
