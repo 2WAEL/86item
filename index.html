@@ -1,0 +1,3371 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>داشبورد الايتمات الموقوفة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#F5F2EB; --surface:#FFFDF2; --surface-2:#F5F5DC; --ink:#2b1315; --muted:#7d6b58; --line:#E6D7B9; --line-soft:#EFE7D6;
+  --accent:#8B0000; --accent-soft:#F7E3DF; --bar:#DCC49B;
+  /* حالات واضحة ومتباينة — مش من عيلة البني/العنابي */
+  --danger:#C81E3A; --danger-soft:#FDE4E8; --danger-ink:#9F1230;
+  --ok:#0B8A5B; --ok-soft:#DCF7EA; --ok-ink:#066B46;
+  --amber:#A85B00; --amber-soft:#FFF1C9; --amber-ink:#7C3E00;
+  --info:#1D4ED8; --info-soft:#DCE7FF;
+  --red-dark:#8B0000; --maroon:#800000; --burgundy:#800020; --wine:#722F37; --crimson:#990000;
+  --beige:#F5F5DC; --cream:#FFFDD0; --warm-beige:#F5F2EB; --sand:#E6D7B9; --khaki:#F0E68C;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+html{background:var(--bg);scrollbar-color:#B8865B var(--beige)}
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:var(--beige)}
+::-webkit-scrollbar-thumb{background:#B8865B;border-radius:8px;border:3px solid var(--beige)}
+::-webkit-scrollbar-thumb:hover{background:#8B0000}
+body{font-family:'IBM Plex Sans Arabic','Segoe UI',Tahoma,Arial,sans-serif;background:linear-gradient(180deg,#FFFDF0 0%,#F5F2EB 360px,var(--bg) 100%);background-attachment:fixed;color:var(--ink);font-size:15px;line-height:1.6;-webkit-text-size-adjust:100%}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+.num,.big,td.num,th.num{font-variant-numeric:tabular-nums}
+
+/* ---------- الهيدر ---------- */
+.top{background:linear-gradient(135deg,#3a0608 0%,#5e0612 45%,#800020 100%);color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;position:sticky;top:0;z-index:30;border-bottom:1px solid #5c1018;box-shadow:0 3px 16px rgba(58,6,8,.28)}
+.top h1{margin:0;font-size:19px;font-weight:700;letter-spacing:0}
+.top .sub{font-size:12.5px;color:#e7c4c8}
+.op-chip{display:inline-flex;align-items:center;gap:7px;margin-top:6px;max-width:100%;background:rgba(223,243,234,.14);border:1px solid rgba(223,243,234,.4);color:#dff3ea;border-radius:999px;padding:3px 10px;font-size:12.5px;line-height:1.4;overflow-wrap:anywhere}
+.op-chip[hidden]{display:none!important}
+.op-chip .oc-ico{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:#1b7f5c;color:#fff;font-size:12px;font-weight:700;line-height:1}
+.op-chip b{color:#fff;font-weight:700}
+.op-chip .oc-kind{background:rgba(255,255,255,.14);border-radius:8px;padding:0 6px;font-size:11.5px;color:#fff;white-space:nowrap}
+.op-chip .oc-act{color:#c9ead9;white-space:nowrap}
+.gear-wrap{position:relative}
+.notif-wrap{position:relative}
+.notif-btn{position:relative;width:42px;height:42px;border-radius:8px;border:1px solid #7a3540;background:#5c1018;color:#fff;font-size:19px;cursor:pointer;display:grid;place-items:center}
+.notif-btn:hover{background:#6b1621}
+.notif-badge{position:absolute;top:-5px;inset-inline-start:-5px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--danger);color:#fff;font-size:11px;line-height:19px;text-align:center;font-weight:700}
+.notif-panel{position:absolute;inset-inline-end:0;top:48px;width:min(380px,calc(100vw - 24px));max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--cream);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(19,32,44,.18);z-index:42;overflow:hidden}
+.notif-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);font-weight:700}
+.notif-list{padding:4px 10px 10px;overflow-y:auto;overscroll-behavior:contain}
+.notif-item{padding:9px 2px;border-bottom:1px solid var(--line-soft);line-height:1.45}
+.notif-item:last-child{border-bottom:0}
+.notif-item.unread{border-inline-start:3px solid var(--accent);padding-inline-start:8px}
+.notif-item b{display:block;font-size:13px}
+.notif-item p{margin:2px 0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.notif-item time{font-size:10.5px;color:var(--muted)}
+.notif-empty{padding:18px 8px;text-align:center;color:var(--muted)}
+.gear{width:42px;height:42px;border-radius:8px;border:1px solid #7a3540;background:#5c1018;color:#fff;font-size:20px;cursor:pointer;display:grid;place-items:center}
+.gear:hover{background:#6b1621}
+.menu{position:absolute;inset-inline-end:0;top:48px;width:max-content;min-width:230px;max-width:min(300px,calc(100vw - 24px));max-height:calc(100vh - 72px);overflow-y:auto;overscroll-behavior:contain;background:var(--cream);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(19,32,44,.18);padding:6px;z-index:40}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:start;white-space:nowrap;background:none;border:0;padding:10px 12px;border-radius:6px;cursor:pointer;font-weight:500}
+.menu button:hover{background:var(--accent-soft)}
+.menu button.danger{color:var(--danger-ink)}
+.menu button.danger:hover{background:rgba(159,18,48,.09)}
+.menu hr{border:0;border-top:1px solid var(--line-soft);margin:4px 0}
+
+/* ---------- الفلاتر ---------- */
+.filters{background:var(--surface);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
+.filters label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);font-weight:500}
+.filters input,.filters select{background:#FBF8EC;border:1px solid var(--line);border-radius:6px;padding:7px 10px;min-height:38px;color:var(--ink);min-width:140px}
+.filters .grow{flex:1;min-width:180px}
+.filters .grow input{width:100%}
+.quick{display:flex;gap:6px}
+.quick button{background:#FBF8EC;border:1px solid var(--line);border-radius:6px;padding:7px 12px;min-height:38px;cursor:pointer;font-weight:500}
+.quick button:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- التابات ---------- */
+.tabs{display:flex;gap:4px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:12px 16px;cursor:pointer;font-weight:600;color:var(--muted);white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--crimson);border-bottom-color:var(--crimson)}
+.tabs .badge{display:inline-block;min-width:20px;padding:0 6px;margin-inline-start:6px;border-radius:10px;background:var(--crimson);color:#fff;font-size:12px;text-align:center}
+
+main{padding:20px;max-width:1400px;margin:0 auto}
+.period{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;margin:0 0 14px;color:var(--muted);font-size:13.5px}
+.period b{color:var(--ink);font-size:16px}
+.warn-note{background:var(--amber-soft);color:var(--amber);border:1px solid #D9C77A;border-radius:6px;padding:8px 12px;margin-bottom:14px;font-size:13.5px}
+
+/* ---------- شريط الفروع (ledger) ---------- */
+.ledger{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:18px}
+.cell{padding:16px 18px;border-inline-start:1px solid var(--line-soft);min-width:0}
+.cell:first-child{border-inline-start:0;background:var(--cream)}
+.cell .nm{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700;margin-bottom:6px}
+.cell .nm i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-inline-end:6px}
+.cell .close{font-size:12px;color:var(--muted);font-weight:500}
+.big{font-size:32px;font-weight:700;line-height:1.1}
+.big small{font-size:14px;color:var(--muted);font-weight:500;margin-inline-start:4px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin-top:10px;font-size:13.5px;color:var(--muted)}
+.kv b{color:var(--ink);font-weight:600;text-align:end}
+.pill{display:inline-block;padding:1px 9px;border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill.danger{background:var(--danger-soft);color:var(--danger-ink)}
+.pill.ok{background:var(--ok-soft);color:var(--ok-ink)}
+.pill.soft{background:var(--amber-soft);color:var(--amber-ink)}
+.pill.gray{background:#F0EADB;color:var(--muted)}
+
+/* ---------- البانلز ---------- */
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-bottom:18px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px;min-width:0}
+.panel h3{margin:0 0 10px;font-size:15.5px}
+.chart-box{position:relative;height:290px}
+.chart-box.tall{height:340px}
+
+/* ---------- الجداول ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line-soft);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:640px;background:var(--surface)}
+th,td{padding:9px 12px;text-align:start;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+th{background:#F1E8D4;color:var(--muted);font-weight:600;font-size:13px;white-space:nowrap;position:sticky;top:0}
+th[data-k]{cursor:pointer;user-select:none}
+th[data-k]:hover{color:var(--accent)}
+td.num,th.num{text-align:center}
+td.it{font-weight:600;min-width:150px}
+tfoot td{background:#F1E8D4;font-weight:700}
+tr:last-child td{border-bottom:0}
+.hbar{position:relative;min-width:110px;text-align:center;font-weight:700}
+.hbar span{position:absolute;inset-block:5px;inset-inline-start:0;background:var(--bar);opacity:.55;border-radius:3px;z-index:0}
+.hbar em{position:relative;z-index:1;font-style:normal}
+.chip{display:inline-block;background:#F3ECDB;border-radius:5px;padding:1px 8px;margin:2px 0 2px 6px;font-size:12.5px;white-space:nowrap}
+.chip b{font-weight:600}
+.rc-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-inline-end:6px;vertical-align:middle;box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 0 3px rgba(0,0,0,.08);flex:none}
+.empty{padding:26px;text-align:center;color:var(--muted)}
+
+details.branch{background:var(--surface);border:1px solid var(--line);border-radius:8px;margin-bottom:14px}
+details.branch>summary{list-style:none;cursor:pointer;padding:14px 18px;display:flex;flex-wrap:wrap;gap:6px 22px;align-items:baseline}
+details.branch>summary::-webkit-details-marker{display:none}
+details.branch>summary::before{content:'▾';color:var(--muted)}
+details.branch:not([open])>summary::before{content:'◂'}
+details.branch>summary b{font-size:16.5px}
+details.branch .stat{color:var(--muted);font-size:13.5px}
+details.branch .stat strong{color:var(--ink)}
+details.branch .body{padding:0 18px 16px}
+
+/* ---------- الموقوف حاليا ---------- */
+.open-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.open-item{background:var(--surface);border:1px solid var(--line);border-inline-start:4px solid var(--danger);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.open-item .row1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.open-item .row1 b{font-size:16px}
+.open-item .meta{color:var(--muted);font-size:13.5px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:600;min-height:38px}
+.btn:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.55;cursor:wait}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.warn{background:var(--danger);border-color:var(--danger)}
+.branch-title{margin:18px 0 8px;font-size:15px;color:var(--muted)}
+
+/* ---------- Post Grid (عرض شبكي متجاوب) ---------- */
+.grid-toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin-bottom:16px}
+.grid-toolbar label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);font-weight:500}
+.grid-toolbar select{background:#FBF8EC;border:1px solid var(--line);border-radius:6px;padding:7px 10px;min-height:38px;min-width:150px}
+.grid-toolbar .chk{flex-direction:row;align-items:center;gap:8px;min-height:38px;color:var(--ink);font-size:13.5px}
+.grid-toolbar .chk input{width:16px;height:16px;accent-color:var(--accent)}
+.grid-toolbar .count{margin-inline-start:auto;color:var(--muted);font-size:13px;align-self:center}
+.post-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:14px}
+.post-grid.compact{grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+.post-card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:9px;min-width:0;transition:box-shadow .18s ease,transform .18s ease}
+.post-card::before{content:'';position:absolute;inset-block:0;inset-inline-start:0;width:4px;border-start-start-radius:10px;border-end-start-radius:10px;background:var(--ok)}
+.post-card.open::before{background:var(--danger)}
+.post-card:hover{box-shadow:0 8px 22px rgba(19,32,44,.12);transform:translateY(-1px)}
+.post-card .pc-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.post-card .pc-name{font-weight:700;font-size:16px;line-height:1.3;overflow-wrap:anywhere}
+.post-card .pc-branch{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:2px}
+.post-card .pc-branch i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.post-card .pc-times{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:12.5px;color:var(--muted)}
+.post-card .pc-times b{display:block;color:var(--ink);font-size:13.5px;font-weight:600}
+.post-card .pc-reason{font-size:13px;background:#F8F4E7;border-radius:6px;padding:7px 10px;overflow-wrap:anywhere}
+.post-card .pc-note{font-size:12.5px;color:var(--muted);margin-top:3px}
+.post-card .pc-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:auto;padding-top:4px}
+.post-card .pc-tags{display:flex;flex-wrap:wrap;gap:4px}
+.post-grid.compact .post-card{padding:10px 12px;gap:6px;border-radius:8px}
+.post-grid.compact .pc-name{font-size:14px}
+.post-grid.compact .pc-times b{font-size:12.5px}
+.post-grid.compact .pc-reason{font-size:12px;padding:5px 8px}
+.post-card .pc-dur{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.grid-group-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:6px 2px 0;border-bottom:1px solid var(--line-soft);margin-top:4px}
+.grid-empty{grid-column:1/-1;padding:28px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:10px}
+
+@media (max-width:640px){.post-grid{grid-template-columns:1fr}}
+
+/* ---------- المودال / التوست / اللودر ---------- */
+.modal{position:fixed;inset:0;background:rgba(19,32,44,.5);display:grid;place-items:center;z-index:60;padding:16px}
+.dlg{background:var(--cream);border-radius:10px;width:min(460px,100%);padding:20px;box-shadow:0 16px 40px rgba(0,0,0,.25)}
+.dlg h2{margin:0 0 14px;font-size:18px}
+.dlg label{display:block;font-size:13px;color:var(--muted);font-weight:500;margin:12px 0 4px}
+.dlg input,.dlg select,.dlg textarea{width:100%;background:#FBF8EC;border:1px solid var(--line);border-radius:6px;padding:9px 11px;min-height:42px;font-family:inherit}
+.dlg textarea{min-height:72px;resize:vertical}
+.dlg .hint{font-size:13px;color:var(--muted);margin:10px 0 0}
+.dlg .actions{display:flex;gap:10px;justify-content:flex-start;margin-top:18px}
+.op-success{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;background:var(--ok-soft);border:1px solid #b9e2d2;border-radius:8px;padding:12px 14px;margin:0 0 14px;animation:ticoPop .35s cubic-bezier(.2,1.4,.4,1)}
+.op-success .op-check{display:inline-grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;background:var(--ok);color:#fff;font-size:19px;font-weight:700;line-height:1;box-shadow:0 0 0 4px rgba(27,127,92,.12)}
+.op-success .op-name{font-weight:700;font-size:17px;color:#0f6b4a;overflow-wrap:anywhere}
+.op-success .op-kind{background:#fff;border:1px solid #b9e2d2;border-radius:999px;color:var(--ok);font-size:11.5px;font-weight:600;padding:1px 8px}
+.op-success .op-action{color:#0f6b4a;font-size:13.5px;font-weight:600;width:100%;margin-inline-start:42px}
+.dlg.is-success .actions{display:none}
+.toast{position:fixed;inset-inline:0;bottom:22px;margin:auto;width:fit-content;max-width:92vw;display:flex;align-items:center;gap:10px;background:var(--ink);color:#fff;padding:11px 18px;border-radius:8px;z-index:80;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .2s,transform .2s;box-shadow:0 10px 30px rgba(43,19,21,.28)}
+.toast.show{opacity:1;transform:none}
+.toast.err{background:var(--danger)}
+.toast.warn{background:linear-gradient(135deg,#7c4a03,#a85b00);border:1px solid #d99a4a}
+.toast.admin{background:linear-gradient(135deg,#3b1d5e,#6d28d9);border:1px solid #b79aec}
+.toast.stop{background:linear-gradient(135deg,#7c3e00,#A85B00);border:1px solid #d99a4a}
+.toast.prep{background:linear-gradient(135deg,#1e3a8a,#1D4ED8);border:1px solid #6d9bf0}
+.toast.ok{background:linear-gradient(135deg,#0d5f43,#1b7f5c);border:1px solid #2f9e6b}
+.toast .tico{display:inline-grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;background:#fff;color:var(--ok);font-weight:700;font-size:15px;line-height:1;box-shadow:0 0 0 3px rgba(255,255,255,.16);animation:ticoPop .45s cubic-bezier(.2,1.4,.4,1)}
+.toast.err .tico{color:var(--danger)}
+.toast.warn .tico{color:var(--amber)}
+.toast.admin .tico{color:#6d28d9;font-size:13px}
+.toast.stop .tico{color:var(--amber)}
+.toast.prep .tico{color:var(--info)}
+.toast .tmsg{min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.toast .tname{font-size:15px;font-weight:700;color:#fff}
+.toast .tkind{background:rgba(255,255,255,.18);border-radius:999px;padding:0 7px;font-size:11.5px;font-weight:600;color:#fff}
+.toast .taction{color:#d9f5e8;font-size:13px}
+@keyframes ticoPop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){.toast .tico{animation:none}}
+.loader{position:fixed;inset-inline:0;top:0;height:3px;z-index:90;background:linear-gradient(90deg,transparent,var(--accent),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:ld 1s linear infinite}
+@keyframes ld{from{background-position:-40% 0}to{background-position:140% 0}}
+@media (prefers-reduced-motion:reduce){.loader{animation:none;background:var(--accent)}.toast{transition:none}}
+
+/* ---------- تسجيل الدخول ---------- */
+.login{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 0%,#6b0a17 0%,#3a0608 48%,#1c0405 100%)}
+.login-card{background:var(--cream);border-radius:10px;width:min(400px,100%);padding:26px 24px;box-shadow:0 16px 40px rgba(0,0,0,.3)}
+.login-card h1{margin:0 0 4px;font-size:21px}
+.login-card .sub2{color:var(--muted);font-size:13.5px;margin:0 0 8px}
+.login-card label{display:block;font-size:13px;color:var(--muted);font-weight:500;margin:12px 0 4px}
+.login-card input{width:100%;background:#FBF8EC;border:1px solid var(--line);border-radius:6px;padding:10px 12px;min-height:44px}
+.login-card .btn{width:100%;margin-top:14px}
+.err{color:var(--danger);font-size:13.5px;min-height:20px;margin-top:10px}
+
+.top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.who{font-size:13px;color:#EAD6C8;text-align:end;line-height:1.35}
+.who b{display:block;color:#fff;font-size:14px}
+.btn.ghost-dark{background:transparent;border-color:#7a3540;color:#fff;min-height:42px}
+.btn.ghost-dark:hover{background:#6b1621;filter:none}
+.btn.sm{padding:3px 10px;min-height:30px;font-size:13px}
+.btn.warn{color:#fff}
+
+/* ---------- واجهة الدسباتشر / الايجينت ---------- */
+.role-head{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-bottom:6px}
+.role-head h2{margin:0;font-size:22px}
+.role-head .muted{color:var(--muted);font-size:13.5px}
+.role-head .btn{padding:12px 20px;font-size:16px}
+.agent-bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;margin-bottom:16px}
+.agent-bar label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);font-weight:500}
+.agent-bar input,.agent-bar select{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 10px;min-height:42px;min-width:160px}
+.agent-bar .grow{flex:1;min-width:200px}
+.agent-bar .grow input{width:100%}
+.range-note{display:inline-flex;align-items:center;gap:6px;background:var(--cream);border:1px solid var(--sand);color:var(--wine);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;align-self:center;white-space:nowrap;line-height:1.4}
+.range-note b{color:var(--crimson)}
+/* أوقات التحضير والتوصيل */
+.times-card{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:16px}
+.times-stat{display:flex;flex-direction:column;gap:1px;min-width:112px;padding:6px 12px;border-radius:6px;background:var(--cream);border:1px solid var(--line-soft)}
+.times-stat span{font-size:12px;color:var(--muted);line-height:1.3}
+.times-stat b{font-size:20px;color:var(--wine);line-height:1.2}
+.times-stat.tot{background:var(--accent-soft);border-color:#e6c9c3}
+.times-stat.tot b{color:var(--crimson)}
+.times-card .btn{margin-inline-start:auto}
+.branch-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pill.time{background:var(--beige);color:var(--wine);border:1px solid var(--sand)}
+.pill.time.tot{background:var(--accent-soft);color:var(--crimson);border-color:#e6c9c3}
+.times-toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.times-toolbar .btn{font-size:13.5px}
+.times-sub{font-size:12.5px;color:var(--muted);font-weight:400;margin-inline-start:6px}
+/* الإعدادات / إدارة الفروع / التقارير */
+.branch-hours{display:inline-flex;align-items:center;gap:6px;background:var(--cream);border:1px solid var(--sand);color:var(--wine);border-radius:999px;padding:4px 10px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.branch-hours b{color:var(--crimson)}
+.cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 12px;margin-top:6px}
+.cfg-grid label{margin:0}
+.cfg-note{font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.7}
+.rep-toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.rep-toolbar .btn{font-size:13.5px}
+.rep-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.rep-kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.rep-kpi span{display:block;font-size:12.5px;color:var(--muted)}
+.rep-kpi b{display:block;font-size:22px;color:var(--wine);margin-top:2px}
+.rep-kpi small{font-size:12px;color:var(--muted)}
+.split-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.agent-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+.agent-cols h4{margin:0 0 8px;font-size:14.5px}
+.ag-list{list-style:none;margin:0;padding:0}
+.ag-list li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-soft)}
+.ag-list li:last-child{border-bottom:0}
+.ag-list .t{color:var(--muted);font-size:13px;white-space:nowrap}
+.creds{background:var(--amber-soft);border:1px solid #D9C77A;border-radius:6px;padding:10px 12px;margin-top:12px;font-size:13.5px;line-height:1.9}
+.creds code{background:#fff;border-radius:4px;padding:1px 6px;direction:ltr;display:inline-block}
+.dlg td.small{max-width:300px;font-size:12px;line-height:1.6;word-break:break-word;color:var(--muted)}
+.dlg{max-height:92vh;overflow:auto}
+.dlg.wide{width:min(760px,100%)}
+.chkrow{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px}
+.chkrow input{width:auto;min-height:0}
+
+@media (max-width:640px){
+  .top{padding:10px 14px} main{padding:14px} .filters{padding:10px 14px} .tabs{padding:0 8px}
+  .big{font-size:27px} .filters input,.filters select{min-width:0;width:100%} .filters label{flex:1 1 130px}
+  .range-note{width:100%;justify-content:center;white-space:normal;text-align:center}
+}
+/* ---------- صندوق الأخطاء ---------- */
+.errbox{position:fixed;inset-inline-start:14px;bottom:14px;width:min(520px,calc(100vw - 20px));max-height:70vh;overflow:auto;background:#2b1315;color:#fff;border:1px solid #C81E3A;border-radius:10px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:95;padding:12px 14px;direction:rtl}
+.errbox .eb-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.errbox .eb-head b{font-size:14.5px;color:#ffd9de}
+.errbox .eb-msg{margin:8px 0 6px;font-size:13.5px;line-height:1.6;overflow-wrap:anywhere}
+.errbox pre{margin:6px 0;background:#1b0d0e;border:1px solid #5c1018;border-radius:8px;padding:8px 10px;font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;direction:ltr;text-align:left}
+.errbox .eb-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.errbox .eb-actions .btn{background:#C81E3A;border-color:#C81E3A;color:#fff;min-height:32px;padding:4px 10px;font-size:12.5px}
+.errbox .eb-actions .btn.ghost{background:transparent;color:#fff;border-color:#7a3540}
+.avail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.av-item{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;border-inline-start:4px solid var(--ok)}
+.av-item.off{border-inline-start-color:var(--danger)}
+.av-item.stopped{border-inline-start-color:var(--amber)}
+.av-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.av-top b{font-size:14.5px;overflow-wrap:anywhere}
+.av-meta{font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.av-branch-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14.5px;margin:14px 0 8px}
+.days-grid{display:grid;grid-template-columns:1fr auto auto auto;gap:8px 10px;align-items:center;margin-top:8px}
+.days-grid .dh{font-size:12px;color:var(--muted);font-weight:600}
+.days-grid input[type=time]{background:#FBF8EC;border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-height:36px;direction:ltr}
+.days-grid .dayname{font-weight:600;font-size:13.5px}
+.closed-note{background:var(--danger-soft);color:var(--danger-ink);border:1px solid #f2b8c2;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13.5px}
+.menu-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line-soft)}
+.menu-row .mi{font-weight:600;flex:1;min-width:140px}
+.menu-row .mp{font-size:12.5px;color:var(--muted)}
+@media (max-width:640px){.days-grid{grid-template-columns:1fr 1fr 1fr}.days-grid .dh:nth-child(4){display:none}}
+</style>
+</head>
+<body>
+
+<div class="loader" id="loader" hidden></div>
+
+<div class="login" id="login" hidden>
+  <form class="login-card" id="loginForm">
+    <h1>الايتمات الموقوفة</h1>
+    <p class="sub2">سجّل دخول بحسابك</p>
+    <label for="lgUser">اسم المستخدم</label>
+    <input id="lgUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" dir="ltr">
+    <label for="lgPass">كلمة السر</label>
+    <input id="lgPass" type="password" autocomplete="current-password" dir="ltr">
+    <div class="err" id="lgErr" role="alert"></div>
+    <button class="btn" id="lgBtn" type="submit">دخول</button>
+  </form>
+</div>
+
+<div id="app" hidden>
+<header class="top">
+  <div>
+    <h1>الايتمات الموقوفة</h1>
+    <div class="sub" id="updated">جاري تحميل البيانات...</div>
+    <div class="op-chip" id="opChip" role="status" aria-live="polite" hidden></div>
+  </div>
+  <div class="top-actions">
+    <div class="who" id="who"></div>
+    <button class="btn ghost-dark" id="logoutBtn" type="button">خروج</button>
+    <div class="notif-wrap">
+      <button class="notif-btn" id="notifBtn" type="button" aria-label="الإشعارات" aria-expanded="false">🔔<span class="notif-badge" id="notifBadge" hidden>0</span></button>
+      <div class="notif-panel" id="notifPanel" hidden>
+        <div class="notif-head"><span>الإشعارات</span><button class="btn ghost sm" id="notifReadAll" type="button">تحديد الكل كمقروء</button></div>
+        <div class="notif-list" id="notifList"><div class="notif-empty">جاري تحميل الإشعارات...</div></div>
+      </div>
+    </div>
+    <div class="gear-wrap">
+      <button class="gear" id="gearBtn" type="button" aria-label="الإعدادات" aria-haspopup="true" aria-expanded="false">⚙</button>
+      <div class="menu" id="gearMenu" hidden>
+        <button data-act="fetch" data-roles="management branch agent">🔄 جلب بيانات كل فرع</button>
+        <hr data-roles="management branch">
+        <button data-act="logStop" data-roles="management branch">⏸ تسجيل إيقاف ايتم</button>
+        <hr data-roles="management">
+        <button data-act="restaurants" data-roles="management">🍽️ إدارة المطاعم</button>
+        <button data-act="menu" data-roles="management">📋 إدارة المنيو والتوفر</button>
+        <button data-act="reasons" data-roles="management">🏷️ إدارة أسباب التوقف</button>
+        <button data-act="rollover" data-roles="management branch">🌙 إغلاق اليوم وترحيل الشيفت</button>
+        <hr data-roles="management">
+        <button data-act="users" data-roles="management">👥 إدارة المستخدمين</button>
+        <button data-act="branches" data-roles="management">🏪 إدارة الفروع وأوقات العمل</button>
+        <button data-act="audit" data-roles="management">🧾 سجل العمليات (Audit)</button>
+        <button data-act="errors" data-roles="management">🛠️ سجل الأخطاء</button>
+        <button data-act="exportAll" data-roles="management">⬇ تصدير كل التقارير (Excel)</button>
+        <button data-act="lists" data-roles="management">🧩 تحديث قوائم الاختيار في الشيتات</button>
+        <hr data-roles="management">
+        <button data-act="clearData" data-roles="management" class="danger">🧨 مسح كل الداتا</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="filters" aria-label="الفلاتر">
+  <label>الفترة
+    <select id="fMode">
+      <option value="month">شهر</option>
+      <option value="day">يوم</option>
+      <option value="range">من - إلى</option>
+    </select>
+  </label>
+  <label data-m="month">الشهر <input type="month" id="fMonth"></label>
+  <label data-m="day">اليوم <input type="date" id="fDay"></label>
+  <label data-m="range">من <input type="date" id="fFrom"></label>
+  <label data-m="range">إلى <input type="date" id="fTo"></label>
+  <label>المطعم <select id="fRest"></select></label>
+  <label>الفرع <select id="fBranch"></select></label>
+  <label class="grow">بحث بالايتم <input type="search" id="fQ" placeholder="اكتب اسم الايتم"></label>
+  <div class="quick">
+    <button data-q="today">اليوم</button>
+    <button data-q="yesterday">أمس</button>
+    <button data-q="month">الشهر الحالي</button>
+  </div>
+</section>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="summary" aria-selected="true">الملخص</button>
+  <button role="tab" data-tab="reasons" aria-selected="false">السبب × الفرع</button>
+  <button role="tab" data-tab="log" aria-selected="false">السجل</button>
+  <button role="tab" data-tab="grid" aria-selected="false">الشبكة</button>
+  <button role="tab" data-tab="reports" aria-selected="false">📊 مقارنة الشهور</button>
+  <button role="tab" data-tab="times" aria-selected="false">⏱ التحضير والتوصيل</button>
+  <button role="tab" data-tab="open" aria-selected="false">موقوف حاليا<span class="badge" id="openBadge" hidden>0</span></button>
+</nav>
+
+<main>
+  <div class="period" id="period"></div>
+  <div id="notes"></div>
+  <div id="emptyAll" class="panel empty" hidden>مفيش شيتات فروع اتعرفت. اتأكد إن صف الهيدرز رقم 3 وفيه Date و Item Name و Stop Time.</div>
+
+  <section id="tab-summary">
+    <div class="ledger" id="ledger"></div>
+    <div class="grid2">
+      <div class="panel"><h3>مدة الوقف يوميا (h:mm:ss)</h3><div class="chart-box"><canvas id="chTrend"></canvas></div></div>
+      <div class="panel"><h3>أكتر 10 ايتمات وقفا (h:mm:ss)</h3><div class="chart-box"><canvas id="chTop"></canvas></div></div>
+    </div>
+    <div id="branchTables"></div>
+  </section>
+
+  <section id="tab-reasons" hidden>
+    <div class="panel" style="margin-bottom:18px">
+      <h3>كل فرع وقف كام مرة لكل سبب</h3>
+      <div class="tbl-wrap" id="pivot"></div>
+    </div>
+    <div class="panel"><h3>توزيع مرات الوقف حسب السبب</h3><div class="chart-box tall"><canvas id="chReasons"></canvas></div></div>
+  </section>
+
+  <section id="tab-log" hidden>
+    <div class="rep-toolbar">
+      <button class="btn" data-xlsx="log">⬇ تصدير السجل (Excel)</button>
+      <button class="btn ghost" data-xlsx="all">⬇ التقرير الشامل (Excel)</button>
+    </div>
+    <div class="panel"><div class="tbl-wrap" id="logTable"></div></div>
+  </section>
+
+  <section id="tab-grid" hidden>
+    <div class="grid-toolbar" aria-label="إعدادات الشبكة">
+      <label>الحالة
+        <select id="gStatus">
+          <option value="all">الكل</option>
+          <option value="open">موقوف حاليا</option>
+          <option value="closed">اشتغل</option>
+        </select>
+      </label>
+      <label>الترتيب
+        <select id="gSort">
+          <option value="new">الأحدث أولا</option>
+          <option value="old">الأقدم أولا</option>
+          <option value="dur">المدة الأطول</option>
+          <option value="item">اسم الايتم</option>
+          <option value="branch">الفرع</option>
+        </select>
+      </label>
+      <label class="chk"><input type="checkbox" id="gGroup" checked> تجميع حسب الفرع</label>
+      <label class="chk"><input type="checkbox" id="gCompact"> عرض مضغوط</label>
+      <span class="count" id="gCount"></span>
+    </div>
+    <div id="postGrid" class="post-grid"></div>
+  </section>
+
+  <section id="tab-reports" hidden>
+    <div class="rep-toolbar">
+      <button class="btn" data-xlsx="all">⬇ تصدير التقرير الشامل (Excel)</button>
+      <button class="btn ghost" data-xlsx="months">⬇ مقارنة الشهور</button>
+      <button class="btn ghost" data-xlsx="branches">⬇ الشهور × الفروع</button>
+      <button class="btn ghost" data-xlsx="topItems">⬇ الأيتمات الأكثر وقفًا</button>
+      <button class="btn ghost" data-xlsx="log">⬇ سجل الوقف</button>
+    </div>
+    <div class="rep-kpis" id="repKpis"></div>
+    <div class="panel" style="margin-bottom:18px">
+      <h3>مقارنة الشهور — وقف الأيتمات <span class="times-sub">كل البيانات المسجلة (مش متأثرة بالفلتر)</span></h3>
+      <div class="tbl-wrap" id="repMonths"></div>
+    </div>
+    <div class="panel" style="margin-bottom:18px">
+      <h3>مقارنة الشهور — متوسطات التحضير والتوصيل لكل فرع <span class="times-sub">بالدقايق</span></h3>
+      <div class="tbl-wrap" id="repBranchMonths"></div>
+    </div>
+    <div class="panel" style="margin-bottom:18px">
+      <h3>الأيتمات الأكثر وقفًا <span class="times-sub">عدد مرات الوقف لكل شهر</span></h3>
+      <div class="tbl-wrap" id="repTopItems"></div>
+    </div>
+    <div class="panel">
+      <h3>مدة الوقف شهريا (h:mm:ss)</h3>
+      <div class="chart-box"><canvas id="chMonths"></canvas></div>
+    </div>
+  </section>
+
+  <section id="tab-times" hidden>
+    <div class="times-toolbar">
+      <button class="btn" data-xlsx="times">⬇ تصدير الأوقات (Excel)</button>
+      <button class="btn ghost" data-xlsx="timesChanges">⬇ تغييرات الأوقات (Excel)</button>
+      <button class="btn ghost" data-xlsx="timesSum">⬇ ملخص الفروع (Excel)</button>
+      <button class="btn ghost" data-xlsx="timesMonths">⬇ مقارنة الشهور (Excel)</button>
+      <button class="btn ghost" data-xlsx="timesDetail">⬇ التقرير التفصيلي (Excel)</button>
+    </div>
+    <div class="panel" style="margin-bottom:18px">
+      <h3>ملخص الفروع <span class="times-sub">الفترة المختارة</span></h3>
+      <div class="tbl-wrap" id="timesSummary"></div>
+    </div>
+    <div class="panel" style="margin-bottom:18px">
+      <h3>مقارنة الشهور <span class="times-sub">إجمالي تحضير + توصيل (دقيقة)</span></h3>
+      <div class="tbl-wrap" id="timesMonths"></div>
+    </div>
+    <div class="panel">
+      <h3>تفصيلي — كل عمليات الوقف في الفترة</h3>
+      <div class="tbl-wrap" id="timesDetail"></div>
+    </div>
+  </section>
+
+  <section id="tab-open" hidden>
+    <div id="openList"></div>
+  </section>
+
+  <!-- واجهة دسباتشر الفرع -->
+  <section id="view-branch" hidden>
+    <div id="brHead"></div>
+    <div id="brClosed"></div>
+    <div id="brTimes"></div>
+    <h3 class="branch-title">موقوف حاليا</h3>
+    <div id="brOpen"></div>
+    <h3 class="branch-title">آخر نشاط (شيفت الفرع)</h3>
+    <div class="panel"><div class="tbl-wrap" id="brRecent"></div></div>
+  </section>
+
+  <!-- واجهة الايجينت (قراءة فقط) -->
+  <section id="view-agent" hidden>
+    <div class="agent-bar">
+      <label>الفرع <select id="aBranch"></select></label>
+      <label class="grow">بحث بالايتم <input type="search" id="aQ" placeholder="اكتب اسم الايتم"></label>
+      <span class="range-note" id="shiftNote" title="كل فرع وله شيفت حسب أوقات عمله، والموقوف حاليا بيفضل ظاهر لحد ما يتشغّل">🕒 شيفت كل فرع حسب أوقات عمله</span>
+    </div>
+    <div id="agentList"></div>
+    <h3 class="branch-title">🟢 توفر الأصناف (لحظي)</h3>
+    <div id="agentAvail"></div>
+  </section>
+</main>
+</div>
+<!-- /app -->
+
+<div class="modal" id="modal" hidden>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h2 id="mTitle"></h2>
+    <div id="mBody"></div>
+    <div class="actions">
+      <button class="btn" id="mSubmit"></button>
+      <button class="btn ghost" id="mCancel">إلغاء</button>
+    </div>
+  </div>
+</div>
+<div class="errbox" id="errBox" hidden role="alert">
+  <div class="eb-head"><b id="ebTitle">خطأ</b><button class="btn ghost sm" id="ebClose" type="button" aria-label="إغلاق">✕</button></div>
+  <div class="eb-msg" id="ebMsg"></div>
+  <pre id="ebDetail" dir="ltr"></pre>
+  <div class="eb-actions">
+    <button class="btn" id="ebCopy" type="button">نسخ التفاصيل</button>
+    <button class="btn ghost" id="ebLog" type="button">سجل الأخطاء</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* =====================================================
+   الحالة العامة
+   ===================================================== */
+var D = null;                         // الداتا من السيرفر
+var S = { mode:'month', month:'', day:'', from:'', to:'', rest:'', branch:'all', q:'', tab:'summary', sort:{k:'h',dir:-1} };   /* rest = البراند المحدد — مفيش وضع "كل المطاعم" */
+var charts = {};
+var A = { branch:'all', q:'' };       // فلاتر واجهة الايجينت
+var G = { status:'all', sort:'new', group:true, compact:false };   // إعدادات Post Grid
+/* ألوان الفروع: hues متباعدة + تشبع عالي — كل فرع ليه لون مميز فورًا */
+var BRANCH_PALETTE = [
+  '#1D4ED8', // أزرق ملكي
+  '#047857', // أخضر زمردي
+  '#7C3AED', // بنفسجي
+  '#0E7490', // سماوي غامق
+  '#C2410C', // برتقالي محروق
+  '#BE185D', // وردي توتي
+  '#4D7C0F', // أخضر زيتوني
+  '#4338CA', // نيلي
+  '#0F766E', // تركواز
+  '#A21CAF', // ماجنتا
+  '#B45309', // عسلي غامق
+  '#0369A1'  // أزرق سماوي
+];
+/* ألوان أسباب الإيقاف: نسخة أفتح/أكثر حيوية من باليتة الفروع لتمييزها بصريًا */
+var REASON_PALETTE = [
+  '#3B82F6', // أزرق فاتح
+  '#22C55E', // أخضر فاتح
+  '#A855F7', // بنفسجي فاتح
+  '#06B6D4', // سماوي فاتح
+  '#F97316', // برتقالي فاتح
+  '#EC4899', // وردي فاتح
+  '#65A30D', // ليموني
+  '#6366F1', // نيلي فاتح
+  '#14B8A6', // تركواز
+  '#F59E0B', // عسلي
+  '#D946EF', // فوشيا
+  '#0EA5E9'  // أزرق سماوي
+];
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+/* مفتاح مقارنة أسماء (مسافات/حروف كبيرة/رموز مخفية) — نفس منطق السيرفر */
+function normKey(s){ return String(s==null?'':s).replace(/[\u200B-\u200F\u202A-\u202E\u00A0]/g,' ').replace(/\s+/g,' ').trim().toLowerCase(); }
+function pad(n){ return (n<10?'0':'')+n; }
+
+/* ---------- تنسيق الوقت الموحّد: h:mm:ss في كل الشاشات ولكل الأدوار ---------- */
+/** ثواني → h:mm:ss */
+function hms(sec){
+  sec=Math.max(0,Math.round(+sec||0));
+  var h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+  return h+':'+pad(m)+':'+pad(s);
+}
+/** ساعات (كسر عشري) → h:mm:ss — للاستخدام في الحسابات والتجميعات */
+function fmtDurH(h){ return hms((+h||0)*3600); }
+/** أي وقت جاي من السيرفر/الكاش → h:mm:ss (بيصلّح القديم اللي كان h:mm) */
+function fmtTime(v){
+  if(v==null || v==='') return '';
+  if(typeof v==='number'){ return isFinite(v) ? hms(v*3600) : ''; }
+  var s=String(v).trim();
+  if(!s) return '';
+  var m=s.match(/(\d{1,3}):(\d{2})(?::(\d{2}))?/);
+  if(!m) return s;
+  var ap=s.match(/([AaPp])\.?\s*[Mm]\.?\s*$/);
+  return (+m[1])+':'+pad(+m[2])+':'+pad(m[3]==null?0:+m[3])+(ap?(' '+ap[1].toUpperCase()+'M'):'');
+}
+/** تاريخ + وقت → yyyy-MM-dd h:mm:ss */
+function fmtDateTime(v){
+  if(v==null || v==='') return '';
+  var s=String(v).trim();
+  var m=s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,3}:\d{2}(?::\d{2})?)(.*)$/);
+  if(!m) return fmtTime(s);
+  return m[1]+' '+fmtTime(m[2])+m[3];
+}
+/** مدة صف السجل → h:mm:ss (بترجّع للـdsec أو الساعات لو الكاش قديم) */
+function durStr(r){
+  if(!r) return '';
+  if(r.du!=null && r.du!=='') return fmtTime(r.du);
+  if(r.dsec!=null && isFinite(r.dsec)) return hms(r.dsec);
+  if(r.h!=null && isFinite(r.h)) return hms(r.h*3600);
+  return '';
+}
+/* ثواني اليوم → 9:00 ص / 5:00 ص (لعرض أوقات العمل) */
+function clock12(sec){
+  sec=((Math.round(+sec||0)%86400)+86400)%86400;
+  var h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60);
+  var ap=h>=12?'م':'ص', h12=h%12; if(h12===0) h12=12;
+  return h12+':'+pad(m)+' '+ap;
+}
+/* نص وقت ("09:00" / "5:00 ص" / "9:00:00 AM") → ثواني */
+function parseSec(v){
+  if(v==null) return null;
+  if(typeof v==='number') return isFinite(v)?Math.round(v*86400):null;
+  var s=String(v).replace(/[\u0660-\u0669]/g,function(d){return String(d.charCodeAt(0)-0x0660);}).trim();
+  var m=s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if(!m) return null;
+  var h=+m[1], mi=+m[2], se=+(m[3]||0);
+  if(/([AaPp])\.?\s*[Mm]/.test(s)){
+    var pm=/[Pp]/.test(s.match(/([AaPp])\.?\s*[Mm]/)[1]);
+    if(pm && h<12) h+=12;
+    if(!pm && h===12) h=0;
+  }else if(/[صم]\s*$/.test(s)){
+    var pm2=/م\s*$/.test(s);
+    if(pm2 && h<12) h+=12;
+    if(!pm2 && h===12) h=0;
+  }
+  return (h%24)*3600+mi*60+se;
+}
+/* ---------- الأخطاء: الرسالة + السبب + التفاصيل + Stack (بدل علامة تعجب مبهمة) ---------- */
+var EB_T=null;
+var TECH_MSG_RE=/(eyJ[A-Za-z0-9_\-\.]{10,}|https?:\/\/|select\s|insert\s|update\s|delete\s+from|sql|syntax error|exception|typeerror|referenceerror|cannot read|is not a function|is not defined|at\s+[A-Za-z_$][\w$]*\s*\(|\.gs:\d+|stack|spreadsheetapp|cacheservice|urlfetchapp)/i;
+function parseErr(e){
+  if(e && typeof e==='object' && e.ok===false){
+    var kind=String(e.kind||''), business=!!e.business||kind==='validation';
+    return {
+      ok:false, kind:kind, business:business, code:String(e.code||''), action:String(e.action||''),
+      message:String(e.message||''), detail:String(e.detail||''), stack:String(e.stack||''),
+      cause:String(e.cause||''), at:String(e.at||''), user:String(e.user||'')
+    };
+  }
+  var s=(e && typeof e==='object')?String(e.message||e.error||e.reason||''):String(e||'');
+  var ix=s.indexOf('__ERRV2__');
+  if(ix>=0){
+    try{
+      var o=JSON.parse(s.slice(ix+9));
+      if(o && typeof o==='object'){
+        o.detail=o.detail||''; o.stack=o.stack||''; o.message=o.message||'حصل خطأ غير متوقع.';
+        o.kind=o.kind||''; o.business=!!o.business||o.kind==='validation';
+        return o;
+      }
+    }catch(_){}
+  }
+  s=s.replace(/^Exception:\s*/,'').trim();
+  var out={ok:false,kind:'',business:false,code:'',action:'',message:s,detail:'',stack:'',at:'',user:''};
+  if(!s){ out.message='تعذر استلام تفاصيل الخطأ من الخادم. تحقق من الاتصال وحاول مرة أخرى.'; return out; }
+  if(/SESSION_EXPIRED/.test(s)){ out.code='SESSION_EXPIRED'; out.message='انتهت الجلسة، سجّل دخول تاني.'; return out; }
+  if(/RATE_LIMIT/.test(s)){ out.code='RATE_LIMIT'; out.business=true; out.message='محاولات كتير في وقت قصير. استنى شوية وجرّب تاني.'; return out; }
+  if(/UNKNOWN_ACTION|PAYLOAD_TOO_LARGE/.test(s)){ out.code='UNKNOWN_ACTION'; out.business=true; out.message='العملية غير مسموحة.'; return out; }
+  if(s && !TECH_MSG_RE.test(s) && /[\u0600-\u06FF]/.test(s)){ out.business=true; return out; }
+  if(s && !/[\u0600-\u06FF]/.test(s)){
+    out.detail=s;
+    out.message='تعذر إكمال العملية بسبب خطأ في الاتصال أو في الخادم.';
+  }
+  return out;
+}
+function errMsg(e){
+  var p=parseErr(e);
+  var message=p.message||'حصل خطأ غير متوقع.';
+  if(!p.business){
+    if(p.detail && p.detail!==message) message+=' — التفاصيل: '+String(p.detail).slice(0,240);
+    if(p.code && p.code!=='SESSION_EXPIRED') message+=' (كود '+p.code+')';
+  }
+  return message;
+}
+/* رسالة تحقق/اختيار = تنبيه واضح، خطأ تقني = صندوق خطأ منظم */
+function toastErr(e){
+  var p=parseErr(e);
+  if(p.business){ toast(p.message||errMsg(e),'warn'); return; }
+  showError(e);
+}
+/* صندوق خطأ واضح: الرسالة + كود + التفاصيل التقنية (مخفية الأسرار) */
+function showError(e,ctx){
+  var p=parseErr(e), box=$('errBox');
+  if(p.business){ toast(p.message||errMsg(e),'warn'); return; }
+  if(!box || (!p.message && !p.detail && !p.code)) return;
+  $('ebTitle').textContent=(ctx?ctx+' — ':'')+'خطأ'+(p.code?' '+p.code:'');
+  $('ebMsg').textContent=p.message||'حصل خطأ غير متوقع.';
+  var lines=[];
+  if(p.action) lines.push('action: '+p.action);
+  if(p.at) lines.push('at: '+p.at);
+  if(p.user) lines.push('user: '+p.user);
+  if(p.detail) lines.push('detail: '+p.detail);
+  if(p.cause) lines.push('cause: '+p.cause);
+  if(p.stack) lines.push('stack:\n'+p.stack);
+  $('ebDetail').textContent=lines.join('\n');
+  $('ebDetail').hidden=!lines.length;
+  $('ebLog').hidden=!isAdminUser();
+  box.hidden=false;
+  clearTimeout(EB_T);
+  EB_T=setTimeout(function(){ box.hidden=true; }, 22000);
+}
+function color(name){
+  var i=-1;
+  var list=(D && (D.brandBranches||D.branches))||[];
+  for(var k=0;k<list.length;k++){ if(list[k].name===name){ i=k; break; } }
+  if(i<0){ var s=String(name||''), h=0; for(var j=0;j<s.length;j++) h=(h*31+s.charCodeAt(j))>>>0; i=h; }
+  return BRANCH_PALETTE[i%BRANCH_PALETTE.length];
+}
+/* لون ثابت لكل سبب حسب ترتيبه في DATA — ولو سبب مش موجود بنعمل hash مستقر */
+function reasonColor(name){
+  var i=-1;
+  if(D && D.reasons){ i=D.reasons.indexOf(name); }
+  if(i<0){ var s=String(name||''), h=0; for(var j=0;j<s.length;j++) h=(h*31+s.charCodeAt(j))>>>0; i=h; }
+  return REASON_PALETTE[i%REASON_PALETTE.length];
+}
+
+var toastT;
+function toast(msg,type){
+  msg=String(msg==null?'':msg).trim();
+  var t=$('toast');
+  if(!msg){
+    clearTimeout(toastT);
+    t.textContent='';
+    t.className='toast';
+    return;
+  }
+  /* حماية: أي رسالة إيقاف تظهر كإشعار عادي حتى لو اتبعتت بنوع خطأ بالغلط */
+  if(type==='err' && /⏸|اتوقف/.test(String(msg||''))) type='stop';
+  /* أي رسالة عن صلاحية الأدمن تظهر كإشعار صلاحية (بدون علامة تعجب حمراء) */
+  if(type==='err' && /صلاحية admin|مدير النظام|يوزر الأدمن|admin فقط/i.test(String(msg||''))) type='admin';
+  var ic='';
+  if(type==='ok') ic='<span class="tico" aria-hidden="true">✓</span>';
+  else if(type==='err') ic='<span class="tico" aria-hidden="true">!</span>';
+  else if(type==='warn') ic='<span class="tico" aria-hidden="true">i</span>';
+  else if(type==='stop') ic='<span class="tico" aria-hidden="true">⏸</span>';
+  else if(type==='prep') ic='<span class="tico" aria-hidden="true">⏱</span>';
+  else if(type==='admin') ic='<span class="tico" aria-hidden="true">🔒</span>';
+  t.innerHTML=ic+'<span class="tmsg">'+esc(msg)+'</span>';
+  t.className='toast show '+(type||'');
+  clearTimeout(toastT);
+  toastT=setTimeout(function(){ t.className='toast'; }, type==='ok'?4200:(type==='err'?3800:4800));
+}
+
+/* آخر عملية على DATA — ✓ أخضر ملتصق باسم الايتم/الريزون ويفضل ظاهر في الهيدر */
+var LASTOP=null;
+try{ LASTOP=JSON.parse(sessionStorage.getItem('lastOp')||'null'); }catch(e){}
+function rememberOp(meta){
+  if(!meta || !meta.name) return;
+  LASTOP={name:meta.name, kind:meta.kind||'', action:meta.action||''};
+  try{ sessionStorage.setItem('lastOp',JSON.stringify(LASTOP)); }catch(e){}
+  renderOpChip();
+}
+function renderOpChip(){
+  var chip=$('opChip'); if(!chip) return;
+  if(!LASTOP || !LASTOP.name){ chip.hidden=true; chip.innerHTML=''; return; }
+  chip.innerHTML='<span class="oc-ico" aria-hidden="true">✓</span>'
+    +'<b>'+esc(LASTOP.name)+'</b>'
+    +(LASTOP.kind?'<span class="oc-kind">'+esc(LASTOP.kind)+'</span>':'')
+    +(LASTOP.action?'<span class="oc-act">'+esc(LASTOP.action)+'</span>':'');
+  chip.hidden=false;
+}
+/* توست النجاح: ✓ جنب الاسم نفسه */
+function toastOp(meta){
+  var t=$('toast');
+  t.innerHTML='<span class="tico" aria-hidden="true">✓</span>'
+    +'<span class="tmsg"><b class="tname">'+esc(meta.name)+'</b>'
+    +(meta.kind?'<span class="tkind">'+esc(meta.kind)+'</span>':'')
+    +(meta.action?'<span class="taction">'+esc(meta.action)+'</span>':'')+'</span>';
+  t.className='toast show ok';
+  clearTimeout(toastT); toastT=setTimeout(function(){ t.className='toast'; },5200);
+}
+function loading(on){ $('loader').hidden=!on; }
+
+function addDays(key,n){
+  var p=key.split('-'); var t=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]+n));
+  return t.getUTCFullYear()+'-'+pad(t.getUTCMonth()+1)+'-'+pad(t.getUTCDate());
+}
+
+/* =====================================================
+   تحميل الداتا
+   ===================================================== */
+/* ---------- الجلسة: كل نداء للسيرفر بيروح ومعاه التوكن، والسيرفر هو اللي بيتحقق من الدور ---------- */
+var TOKEN='';
+try{ TOKEN=sessionStorage.getItem('sid')||''; }catch(e){}
+function saveToken(){ try{ if(TOKEN) sessionStorage.setItem('sid',TOKEN); else sessionStorage.removeItem('sid'); }catch(e){} }
+
+/* ---------- صلاحية مدير النظام ---------- */
+function isAdminUser(){
+  return !!(D && D.me && D.me.isAdmin);
+}
+function needAdmin(){
+  if(isAdminUser()) return true;
+  toast('تتطلب العملية صلاحية مدير النظام (Admin).','admin');
+  return false;
+}
+function adminUserField(id){
+  return '<label for="'+id+'">اسم مدير النظام للتأكيد</label>'
+    +'<input id="'+id+'" type="text" dir="ltr" autocomplete="off" placeholder="'+esc(D&&D.me&&D.me.username||'')+'">';
+}
+function checkAdminUserField(id){
+  var el=$(id), v=(el && el.value || '').trim();
+  if(!isAdminUser() || v.toLowerCase()!==String(D.me.username||'').trim().toLowerCase()){
+    toast('أدخل اسم حساب مدير النظام المسجل للدخول.','admin');
+    if(el){ el.focus(); }
+    return false;
+  }
+  return true;
+}
+
+/* كل نداء للسيرفر بيمر من بوابة apiCall (تحقق جلسة + دور + Rate Limit في السيرفر).
+   فيه fallback للنداء المباشر لو النسخة المنشورة قديمة. */
+function api(fn, args, ok, fail){
+  var settled=false;
+  function success(r){ settled=true; (ok||function(){ })(r); }
+  function failure(e){
+    settled=true;
+    if(/SESSION_EXPIRED/.test(errMsg(e))){ toLogin('انتهت الجلسة، سجّل دخول تاني.'); return; }
+    if(fail) fail(e); else toastErr(e);
+  }
+  var run=google.script.run.withSuccessHandler(success).withFailureHandler(failure);
+  if(typeof run.apiCall==='function'){
+    try{ run.apiCall(TOKEN, fn, args||[]); return; }catch(e){ if(settled) return; }
+  }
+  try{ run[fn].apply(run,[TOKEN].concat(args||[])); }
+  catch(e){ failure(e); }
+}
+
+function brandLabel(){
+  var r=(D && D.restaurants || []).filter(function(x){ return x.id===S.rest; })[0];
+  return r ? r.name : 'المطعم المحدد';
+}
+
+function load(force, quiet){
+  loading(true);
+  api('getDashboardData',[!!force, S.rest],
+    function(d){ loading(false); onData(d); if(force && !quiet) toast('تم تحديث بيانات '+brandLabel(),'ok'); },
+    function(e){ loading(false); if(!quiet) toastErr(e); $('updated').textContent='فشل تحميل البيانات'; });
+}
+
+function onData(d){
+  setData(d);
+  if($('app').hidden) enterApp();
+  render();
+}
+
+/* بيجهّز الصفحة حسب الدور: مانجمنت = كل حاجة / دسباتشر = فرعه / ايجينت = قراءة فقط */
+function enterApp(){
+  $('login').hidden=true; $('app').hidden=false;
+  var role=D.me.role, mg=(role==='management');
+  document.querySelector('.filters').hidden=!mg;
+  document.querySelector('.tabs').hidden=!mg;
+  $('period').hidden=!mg; $('notes').hidden=!mg;
+  if(!mg) $('emptyAll').hidden=true;
+  S.tab='summary';
+  document.querySelectorAll('.tabs [data-tab]').forEach(function(x){ x.setAttribute('aria-selected', x.getAttribute('data-tab')==='summary'?'true':'false'); });
+  ['summary','reasons','log','grid','reports','times','open'].forEach(function(t){ $('tab-'+t).hidden=(!mg || t!=='summary'); });
+  $('view-branch').hidden=(role!=='branch');
+  $('view-agent').hidden=(role!=='agent');
+  var LBL={management:'مانجمنت',branch:'دسباتشر الفرع',agent:'ايجينت'};
+  $('who').innerHTML='<b>'+esc(D.me.username)+'</b>'+esc(LBL[role]||role)+((role!=='management' && D.me.branch)?' — '+esc(D.me.branch):'');
+  renderOpChip();
+  document.querySelectorAll('#gearMenu [data-roles]').forEach(function(el){ el.hidden=(el.getAttribute('data-roles').split(' ').indexOf(role)<0); });
+  document.querySelectorAll('#gearMenu [data-act="audit"],#gearMenu [data-act="errors"]').forEach(function(el){ el.hidden=!isAdminUser(); });
+  document.querySelector('#gearMenu [data-act="fetch"]').textContent = mg ? '🔄 تحديث بيانات المطعم' : '🔄 تحديث البيانات';
+  startPolling();
+}
+
+/* رجوع لشاشة الدخول (خروج / انتهاء الجلسة) */
+function toLogin(msg){
+  stopPolling(); TOKEN=''; saveToken(); D=null; loading(false);
+  LASTOP=null; try{ sessionStorage.removeItem('lastOp'); }catch(e){}
+  var oc=$('opChip'); if(oc){ oc.hidden=true; oc.innerHTML=''; }
+  Object.keys(charts).forEach(function(k){ if(charts[k]){ charts[k].destroy(); charts[k]=null; } });
+  S.month=''; S.branch='all'; S.rest=''; S.q='';
+  closeModal(); $('mSubmit').disabled=false;
+  $('app').hidden=true; $('login').hidden=false;
+  $('lgErr').textContent=msg||''; $('lgBtn').disabled=false;
+  setTimeout(function(){ $('lgUser').focus(); },40);
+}
+
+/* نقطة واحدة لاستلام وتجهيز بيانات لوحة التحكم. */
+function setData(d){ D=d; prepare(); }
+
+document.addEventListener('visibilitychange',function(){ if(!document.hidden && D) render(); });
+
+/* =====================================================
+   استطلاع لحظي لحالة الفروع ومفتاح الشيفت + تحديث كامل أبطأ.
+   ===================================================== */
+var pollT=null, fullT=null, LIVE={rev:'',menu:{},fails:0,notifIds:{},notifReady:false,stopReady:false,stoppedSeen:{}};
+var NOTIF_AUDIO=null, NOTIF_ITEMS=[];
+var RING_T=null, RING_OSC=null, RING_GAIN=null;
+function unlockNotificationAudio(){
+  var AudioCtx=window.AudioContext||window.webkitAudioContext;
+  if(!AudioCtx) return;
+  try{
+    if(!NOTIF_AUDIO) NOTIF_AUDIO=new AudioCtx();
+    if(NOTIF_AUDIO.state==='suspended'){
+      var resume=NOTIF_AUDIO.resume();
+      if(resume&&resume['catch']) resume['catch'](function(){});
+    }
+  }catch(e){ NOTIF_AUDIO=null; }
+}
+/* قطع فوري للصوت — بينده من setTimeout بعد 4 ثوانٍ بالظبط */
+function stopNotificationSound(){
+  if(RING_T){ clearTimeout(RING_T); RING_T=null; }
+  if(RING_OSC){
+    try{ RING_OSC.stop(); }catch(e){}
+    try{ RING_OSC.disconnect(); }catch(e){}
+    RING_OSC=null;
+  }
+  if(RING_GAIN){
+    try{ RING_GAIN.gain.cancelScheduledValues(0); }catch(e){}
+    try{ RING_GAIN.disconnect(); }catch(e){}
+    RING_GAIN=null;
+  }
+}
+/* نغمة تليفون كلاسيكية (رنّة متقطعة 4 ثوانٍ) — التوقف القاطع بـ setTimeout(4000) */
+function playNotificationSound(){
+  if(!NOTIF_AUDIO) return;
+  try{
+    if(NOTIF_AUDIO.state==='suspended'){
+      var resume=NOTIF_AUDIO.resume();
+      if(resume&&resume['catch']) resume['catch'](function(){});
+    }
+    stopNotificationSound();
+    var ctx=NOTIF_AUDIO, start=ctx.currentTime, end=start+4;
+    var osc=ctx.createOscillator(), gain=ctx.createGain(), filter=ctx.createBiquadFilter();
+    osc.type='square';
+    filter.type='lowpass'; filter.frequency.value=2400; filter.Q.value=0.7;
+    gain.gain.setValueAtTime(0.0001,start);
+    osc.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+
+    /* رنّات قصيرة متتالية (كلاسيك) داخل الـ4 ثوانٍ */
+    [[0,0.36],[0.55,0.91],[1.6,1.96],[2.15,2.51],[3.2,3.56]].forEach(function(w){
+      var a=start+w[0], b=start+w[1];
+      gain.gain.setValueAtTime(0.0001,a);
+      gain.gain.exponentialRampToValueAtTime(0.14,a+0.01);
+      gain.gain.setValueAtTime(0.14,b-0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001,b);
+    });
+
+    /* ترددين متبادلين = رنّة التليفون */
+    var f=start;
+    while(f<end){
+      osc.frequency.setValueAtTime(1000,f);
+      osc.frequency.setValueAtTime(1320,f+0.02);
+      f+=0.04;
+    }
+    osc.start(start); osc.stop(end);
+    RING_OSC=osc; RING_GAIN=gain;
+    RING_T=setTimeout(stopNotificationSound,4000);   /* توقف تلقائي بعد 4 ثوانٍ بالضبط */
+  }catch(e){ stopNotificationSound(); }
+}
+/* أول تفاعل من المستخدم يفتح الصوت (سياسة تشغيل الصوت في المتصفحات) */
+var AUDIO_ARMED=false;
+['pointerdown','keydown','touchstart'].forEach(function(ev){
+  document.addEventListener(ev,function(){
+    if(AUDIO_ARMED) return;
+    AUDIO_ARMED=true;
+    unlockNotificationAudio();
+  },{passive:true});
+});
+function setNotificationBadge(count){
+  var badge=$('notifBadge'); if(!badge) return;
+  count=Math.max(0,+count||0);
+  badge.textContent=count>99?'99+':String(count);
+  badge.hidden=count===0;
+}
+function renderNotifications(items){
+  NOTIF_ITEMS=items||[];
+  var list=$('notifList'); if(!list) return;
+  list.innerHTML=NOTIF_ITEMS.length?NOTIF_ITEMS.map(function(n){
+    return '<article class="notif-item '+(n.read?'':'unread')+'"><b>'+esc(n.title||'إشعار')+'</b>'
+      +(n.body?'<p>'+esc(n.body)+'</p>':'')
+      +'<time>'+esc(n.at||'')+'</time></article>';
+  }).join(''):'<div class="notif-empty">لا توجد إشعارات.</div>';
+}
+function loadNotifications(asBaseline){
+  api('listNotifications',[100],function(res){
+    var items=(res&&res.items)||[];
+    if(asBaseline){
+      LIVE.notifIds={};
+      items.forEach(function(n){ LIVE.notifIds[n.id]=1; });
+      LIVE.notifReady=true;
+    }
+    renderNotifications(items);
+    setNotificationBadge(res&&res.unread);
+  },function(e){
+    if(asBaseline) toastErr(e);
+  });
+}
+function receiveNotifications(items,unread){
+  items=items||[];
+  if(!LIVE.notifReady){
+    items.forEach(function(n){ LIVE.notifIds[n.id]=1; });
+    LIVE.notifReady=true;
+  }else{
+    var arrived=items.filter(function(n){ return n.id&&!LIVE.notifIds[n.id]; });
+    items.forEach(function(n){ if(n.id) LIVE.notifIds[n.id]=1; });
+    if(arrived.length){
+      playNotificationSound();
+      toast('إشعار جديد: '+(arrived[0].title||'لديك إشعار جديد'));
+    }
+  }
+  renderNotifications(items);
+  setNotificationBadge(unread);
+}
+function startPolling(){
+  stopPolling();
+  LIVE.rev=''; LIVE.notifIds={}; LIVE.notifReady=false;
+  loadNotifications(true);
+  var role=D && D.me.role, fullMs=(role==='management')?60000:45000;
+  pollT=setInterval(livePoll,4000);
+  fullT=setInterval(function(){
+    if(!TOKEN || document.hidden) return;
+    api('getDashboardData',[false,S.rest],function(d){
+      setData(d);
+      if(!document.hidden && $('modal').hidden) render();
+    },function(){});
+  },fullMs);
+  setTimeout(livePoll,700);
+}
+function stopPolling(){
+  if(pollT){ clearInterval(pollT); pollT=null; }
+  if(fullT){ clearInterval(fullT); fullT=null; }
+}
+function livePoll(){
+  if(!TOKEN || document.hidden) return;          // التاب مخفي → استطلاع متوقف
+  api('pollState',[LIVE.rev,S.rest],function(res){
+    if(!res) return;
+    LIVE.fails=0;
+    if(res.unchanged){ setNotificationBadge(res.unread); return; }
+    applyLive(res);
+  },function(){ LIVE.fails++; });
+}
+/* خط أساس الأصناف الموقوفة: أول استطلاع بيسجّل الحالة من غير صوت، وبعدها بنرصد الجديد بس */
+function stopSeenFromBranches(list){
+  var seen={};
+  (list||[]).forEach(function(rb){
+    var k=rb.key||rb.name, m={};
+    (rb.stoppedItems||[]).forEach(function(it){ m[String(it).toLowerCase()]=1; });
+    seen[k]=m;
+  });
+  return seen;
+}
+function primeStopSeen(){
+  if(!D) return;
+  var list=(D.branches||[]).map(function(b){
+    return {key:b.key,name:b.name,stoppedItems:(b.rows||[]).filter(function(r){return r.o;}).map(function(r){return r.it;})};
+  });
+  LIVE.stoppedSeen=stopSeenFromBranches(list);
+  LIVE.stopReady=true;
+}
+function applyLive(res){
+  LIVE.rev=res.rev||'';
+  if(Array.isArray(res.notifications)) receiveNotifications(res.notifications,res.unread);
+  else setNotificationBadge(res.unread);
+  if(res.menu){ LIVE.menu=res.menu; if(D) D.menu=res.menu; }
+  var fresh=res.branches||[], arrived=[];
+  if(!LIVE.stopReady){
+    LIVE.stoppedSeen=stopSeenFromBranches(fresh);
+    LIVE.stopReady=true;
+  }else{
+    fresh.forEach(function(rb){
+      var k=rb.key||rb.name, prev=LIVE.stoppedSeen[k]||{}, m={};
+      (rb.stoppedItems||[]).forEach(function(it){
+        var ik=String(it).toLowerCase();
+        m[ik]=1;
+        if(!prev[ik]) arrived.push({branch:rb.name||rb.key,item:it});
+      });
+      LIVE.stoppedSeen[k]=m;
+    });
+  }
+  if(arrived.length){                       // صنف اتوقف جديد → نغمة 4 ثوانٍ + رسالة واضحة
+    playNotificationSound();
+    toast('⏸ اتوقف صنف جديد: '+arrived[0].item+' — '+arrived[0].branch,'stop');
+  }
+  var changed=false;
+  fresh.forEach(function(rb){
+    var b=((D&&D.branches)||[]).filter(function(x){ return x.name===rb.name || x.key===rb.key; })[0];
+    if(!b) return;
+    if(rb.shiftKey && b.shiftKey && rb.shiftKey!==b.shiftKey) changed=true;
+    if((D.openByBranch[b.key]||0)!==rb.openCount) changed=true;
+  });
+  if($('modal').hidden){
+    if(D && D.me.role==='agent') { renderAgentView(); renderAgentAvail(); }
+  }
+  if(changed) load(false,true);                  // تغيير حقيقي → تحديث كامل
+}
+
+function prepare(){
+  // البراند أولًا: مفيش خيار "كل المطاعم" — لازم براند محدد دائمًا
+  D.menu=D.menu||{}; D.restaurants=D.restaurants||[]; D.roster=D.roster||[];
+  var rlist=D.restaurants;
+  if(!S.rest || !rlist.some(function(r){ return r.id===S.rest; })){
+    var actR=rlist.filter(function(r){ return r.active!==false; });
+    S.rest=(actR[0]||rlist[0]||{}).id||'';
+  }
+  var rsel=$('fRest');
+  if(rsel){
+    var rsig=rlist.map(function(r){ return r.id+':'+r.name+':'+(r.active!==false?'1':'0'); }).join(',');
+    if(rsel.getAttribute('data-brandsig')!==rsig){
+      rsel.innerHTML=rlist.map(function(r){ return '<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>'; }).join('');
+      rsel.setAttribute('data-brandsig',rsig);
+    }
+    if(rsel.value!==S.rest) rsel.value=S.rest;
+    var rl=rsel.closest('label');
+    if(rl) rl.hidden=(rlist.length<2);
+  }
+
+  // الفروع: فروع البراند المحدد فقط
+  var bAllowed=D.branches.filter(function(b){ return !S.rest || b.restaurant===S.rest; });
+  D.brandBranches=bAllowed;
+
+  // تغيير البراند → خط أساس جديد للصوت (من غير ما يرن على الموقوف القديم)
+  if(prepare._stopBrand!==S.rest){
+    prepare._stopBrand=S.rest;
+    LIVE.stopReady=false; LIVE.stoppedSeen={};
+  }
+
+  // بناء صفوف الداشبورد من فروع البراند فقط — عزل كامل حتى لو الـpayload غير مقيّد
+  D.all=[]; D.openSet={}; D.openByBranch={};
+  bAllowed.forEach(function(b){
+    var key=b.key||b.name;
+    b.rows.forEach(function(r){
+      r.b=b.name; r.bkey=key; r.rest=b.restaurant||''; D.all.push(r);
+      if(r.o){
+        var k=b.name+'|'+r.it;
+        D.openSet[k]=(D.openSet[k]||0)+1;
+        D.openSet[key+'|'+r.it]=(D.openSet[key+'|'+r.it]||0)+1;
+        D.openByBranch[key]=(D.openByBranch[key]||0)+1;
+      }
+    });
+  });
+  var ds=D.all.map(function(r){return r.d;}).sort();
+  D.minD=ds[0]||''; D.maxD=ds[ds.length-1]||'';
+  $('updated').textContent='آخر تحديث: '+fmtDateTime(D.generatedAt);
+
+  // أول تحميل: افتراضيات الفلاتر (على بيانات البراند المحدد)
+  if(!S.month){
+    var m=D.now.slice(0,7);
+    var has=D.all.some(function(r){return r.d.slice(0,7)===m;});
+    if(!has && D.maxD) m=D.maxD.slice(0,7);
+    S.month=m; S.day=D.all.some(function(r){return r.d===D.now;})?D.now:(D.maxD||D.now);
+    S.from=m+'-01'; S.to=D.maxD||D.now;
+  }
+
+  var sel=$('fBranch'), cur=S.branch;
+  var bOpts='<option value="all">كل فروع المطعم</option>'+bAllowed.map(function(b){
+    return '<option value="'+esc(b.key||b.name)+'">'+esc(b.name)+'</option>';
+  }).join('');
+  if(sel.getAttribute('data-sig')!==bOpts){ sel.innerHTML=bOpts; sel.setAttribute('data-sig',bOpts); }
+  if(!bAllowed.some(function(b){return (b.key||b.name)===cur;})) cur='all';
+  S.branch=cur; sel.value=cur;
+
+  // رصد ترحيل الشيفت (مفتاح الشيفت بيتغيّر بعد الإغلاق) — داخل البراند المحدد فقط
+  var sig=S.rest+'::'+bAllowed.map(function(b){return (b.key||b.name)+'='+(b.shiftKey||'');}).join('|');
+  if(prepare._shiftSig && prepare._shiftBrand===S.rest && prepare._shiftSig!==sig){
+    var moved=false, prev=prepare._shiftSig;
+    bAllowed.forEach(function(b){
+      var k=(b.key||b.name)+'=';
+      if(prev.indexOf(k)>=0 && prev.indexOf(k+(b.shiftKey||''))<0) moved=true;
+    });
+    if(moved) toast('تم ترحيل الشيفت ومقاييسه بدأت من جديد','ok');
+  }
+  prepare._shiftSig=sig;
+  prepare._shiftBrand=S.rest;
+  syncFilters();
+}
+
+/* =====================================================
+   الفلاتر
+   ===================================================== */
+function syncFilters(){
+  $('fMode').value=S.mode; $('fMonth').value=S.month; $('fDay').value=S.day;
+  $('fFrom').value=S.from; $('fTo').value=S.to; $('fQ').value=S.q;
+  document.querySelectorAll('.filters [data-m]').forEach(function(l){ l.hidden = (l.getAttribute('data-m')!==S.mode); });
+}
+
+function range(){
+  if(S.mode==='day') return [S.day,S.day];
+  if(S.mode==='month'){
+    var y=+S.month.slice(0,4), m=+S.month.slice(5,7), last=new Date(y,m,0).getDate();
+    return [S.month+'-01', S.month+'-'+pad(last)];
+  }
+  return [S.from||'0000-01-01', S.to||'9999-12-31'];
+}
+
+function filtered(){
+  var rg=range(), q=S.q.trim().toLowerCase();
+  return D.all.filter(function(r){
+    if(r.d<rg[0]||r.d>rg[1]) return false;
+    if(S.rest && r.rest!==S.rest) return false;
+    if(S.branch!=='all' && r.bkey!==S.branch) return false;
+    if(q && r.it.toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+}
+
+function brandBranches(){ return ((D && (D.brandBranches||D.branches))||[]); }
+/* خيارات الفروع كمصدر واحد لكل المودالات (مع فلتر اختياري) */
+function branchOptionsHTML(rid, selected, allow){
+  return (D.branches||[]).filter(function(b){
+    return b.restaurant===rid && (!allow || allow(b));
+  }).map(function(b){
+    var key=b.key||b.name;
+    return '<option value="'+esc(key)+'"'+(selected===key?' selected':'')+'>'+esc(b.name)+'</option>';
+  }).join('');
+}
+function shownBranches(){
+  return brandBranches().filter(function(b){
+    return S.branch==='all'||(b.key||b.name)===S.branch;
+  });
+}
+/* تجميع صفوف الفلتر حسب الفرع مرة واحدة بدل فلترة متكررة لكل فرع */
+function rowsByBranch(rows){
+  var g={};
+  rows.forEach(function(r){ (g[r.bkey]||(g[r.bkey]=[])).push(r); });
+  return g;
+}
+function openCount(branchKey){
+  var k=branchKey||(S.branch!=='all'?S.branch:'');
+  if(k) return D.openByBranch[k]||0;
+  var n=0;
+  shownBranches().forEach(function(b){ n+=D.openByBranch[b.key]||0; });
+  return n;
+}
+
+function summarize(rows){
+  var items={}, h=0; rows.forEach(function(r){ h+=r.h; items[r.it]=1; });
+  return { stops:rows.length, items:Object.keys(items).length, hours:h, avg: rows.length? h/rows.length : 0 };
+}
+
+/* =====================================================
+   الرندر
+   ===================================================== */
+function render(){
+  if(!D) return;
+  if(D.me.role==='branch'){ renderBranchView(); return; }
+  if(D.me.role==='agent'){ renderAgentView(); renderAgentAvail(); return; }
+  $('emptyAll').hidden = brandBranches().length>0;
+  var rows=filtered();
+  renderMeta(rows);
+  var ob=openCount(null); var badge=$('openBadge'); badge.textContent=ob; badge.hidden=!ob;
+  if(S.tab==='summary') renderSummary(rows);
+  else if(S.tab==='reasons') renderReasons(rows);
+  else if(S.tab==='log') renderLog(rows);
+  else if(S.tab==='grid') renderGrid(rows);
+  else if(S.tab==='reports') renderReports(rows);
+  else if(S.tab==='times') renderTimes(rows);
+  else renderOpen();
+}
+
+function renderMeta(rows){
+  var rg=range(), label;
+  if(S.mode==='day') label='يوم '+rg[0];
+  else if(S.mode==='month') label='شهر '+S.month;
+  else label='من '+rg[0]+' إلى '+rg[1];
+  var s=summarize(rows);
+  $('period').innerHTML='<b>'+esc(label)+'</b><span>'+s.stops+' مرة وقف</span><span>مدة الوقف '+fmtDurH(s.hours)+'</span>';
+  var n='';
+  if(D.skipped>0) n+='<div class="warn-note">تم تجاهل '+D.skipped+' صف ناقص في الشيتات (بدون تاريخ أو وقت إيقاف).</div>';
+  $('notes').innerHTML=n;
+}
+
+/* ---------- الملخص ---------- */
+function ledgerCell(name, s, open, hours, dot){
+  return '<div class="cell">'
+    +'<div class="nm"><span>'+(dot?'<i style="background:'+dot+'"></i>':'')+esc(name)+'</span>'+(hours?'<span class="close">🕘 '+esc(hours)+'</span>':'')+'</div>'
+    +'<div class="big num">'+fmtDurH(s.hours)+'</div>'
+    +'<div class="kv"><span>مرات الوقف</span><b class="num">'+s.stops+'</b>'
+    +'<span>ايتمات مختلفة</span><b class="num">'+s.items+'</b>'
+    +'<span>متوسط الوقف للمرة</span><b class="num">'+fmtDurH(s.avg)+'</b>'
+    +'<span>موقوف حاليا</span><b class="num">'+(open?'<span class="pill danger">'+open+'</span>':'0')+'</b></div>'
+    +'</div>';
+}
+
+function renderSummary(rows){
+  var shown=shownBranches(), byBranch=rowsByBranch(rows);
+  var html=ledgerCell('إجمالي '+brandLabel(), summarize(rows), openCount(null), '', '');
+  shown.forEach(function(b){
+    html+=ledgerCell(b.name, summarize(byBranch[b.key]||[]), openCount(b.key), shiftText(b), color(b.name));
+  });
+  $('ledger').innerHTML=html;
+  renderTrend(rows, shown);
+  renderTop(rows);
+  var closed={};   // نفتكر الفروع اللي المستخدم قفلها عشان التحديث التلقائي ميفتحهاش تاني
+  document.querySelectorAll('#branchTables details.branch:not([open])').forEach(function(d){ closed[d.getAttribute('data-bn')]=1; });
+  $('branchTables').innerHTML=shown.map(function(b){ return branchTable(b, byBranch[b.key]||[]); }).join('');
+  document.querySelectorAll('#branchTables details.branch').forEach(function(d){ if(closed[d.getAttribute('data-bn')]) d.removeAttribute('open'); });
+}
+
+function mkChart(id,cfg){
+  if(typeof Chart==='undefined') return;
+  if(charts[id]) charts[id].destroy();
+  Chart.defaults.font.family="'IBM Plex Sans Arabic',Tahoma,sans-serif";
+  charts[id]=new Chart($(id),cfg);
+}
+
+function renderTrend(rows, shown){
+  if(!D.minD){ if(charts.chTrend){charts.chTrend.destroy();charts.chTrend=null;} return; }
+  var rg=range(), from=rg[0]<D.minD?D.minD:rg[0], to=rg[1]>D.maxD?D.maxD:rg[1];
+  var days=[], k=from, byBranch=rowsByBranch(rows);
+  while(k<=to && days.length<93){ days.push(k); k=addDays(k,1); }
+  var datasets=shown.map(function(b){
+    var m={};
+    (byBranch[b.key]||[]).forEach(function(r){ m[r.d]=(m[r.d]||0)+r.h; });
+    return { label:(b.restaurantName?b.restaurantName+' — ':'')+b.name, data:days.map(function(d){return Math.round((m[d]||0)*10)/10;}), borderColor:color(b.name), backgroundColor:color(b.name), tension:.25, pointRadius:days.length>45?0:3, borderWidth:2 };
+  });
+  mkChart('chTrend',{ type:'line', data:{ labels:days.map(function(d){return d.slice(5);}), datasets:datasets },
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',rtl:true,labels:{usePointStyle:true}},
+        tooltip:{callbacks:{label:function(c){ return c.dataset.label+': '+fmtDurH(c.parsed.y); }}}},
+      scales:{ y:{beginAtZero:true,title:{display:true,text:'مدة الوقف (h:mm:ss)'},ticks:{callback:function(v){return fmtDurH(v);}}} } } });
+}
+
+function renderTop(rows){
+  var m={}; rows.forEach(function(r){ m[r.it]=(m[r.it]||0)+r.h; });
+  var top=Object.keys(m).map(function(k){return {it:k,h:m[k]};}).sort(function(a,b){return b.h-a.h;}).slice(0,10);
+  mkChart('chTop',{ type:'bar', data:{ labels:top.map(function(x){return x.it;}), datasets:[{ label:'مدة الوقف', data:top.map(function(x){return Math.round(x.h*10)/10;}), backgroundColor:'#2563EB', borderRadius:3 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(c){ return 'مدة الوقف: '+fmtDurH(c.parsed.x); }}}},
+      scales:{ x:{beginAtZero:true,ticks:{callback:function(v){return fmtDurH(v);}}}, y:{ticks:{autoSkip:false}} } } });
+}
+
+function branchTable(b, rows){
+  var g={};
+  rows.forEach(function(r){
+    var o=g[r.it]||(g[r.it]={it:r.it,n:0,h:0,c:0,rs:{}});
+    o.n++; o.h+=r.h; if(r.c) o.c++;
+    var x=o.rs[r.r]||(o.rs[r.r]={n:0,h:0}); x.n++; x.h+=r.h;
+  });
+  var list=Object.keys(g).map(function(k){ var o=g[k]; o.avg=o.h/o.n; o.open=D.openSet[b.key+'|'+k]?1:0; return o; });
+  var s=S.sort;
+  list.sort(function(a,c){
+    if(s.k==='it') return s.dir*a.it.localeCompare(c.it,'ar');
+    return s.dir*(a[s.k]-c[s.k]) || (c.h-a.h);
+  });
+  var tot=summarize(rows), maxH=list.reduce(function(m,o){return Math.max(m,o.h);},0)||1;
+  var arrow=function(k){ return s.k===k ? (s.dir<0?' ▼':' ▲') : ''; };
+  var head='<tr><th data-k="it">الايتم'+arrow('it')+'</th><th class="num" data-k="n">مرات الوقف'+arrow('n')+'</th>'
+    +'<th class="num" data-k="h">اجمالي المدة (h:mm:ss)'+arrow('h')+'</th><th class="num" data-k="avg">متوسط للمرة (h:mm:ss)'+arrow('avg')+'</th><th>الأسباب</th><th>الحالة</th></tr>';
+  var body='';
+  if(!list.length) body='<tr><td colspan="6" class="empty">مفيش ايتمات وقفت في الفترة دي.</td></tr>';
+  list.forEach(function(o){
+    var chips=Object.keys(o.rs).sort(function(a,c){return o.rs[c].h-o.rs[a].h;}).map(function(k){
+      return '<span class="chip"><span class="rc-dot" style="background:'+reasonColor(k)+'"></span>'+esc(k)+' <b>'+o.rs[k].n+'×</b> '+fmtDurH(o.rs[k].h)+'</span>';
+    }).join('');
+    var status=(o.open?'<span class="pill danger">موقوف حاليا</span>':'<span class="pill ok">اشتغل</span>')
+      +(o.c?' <span class="pill soft" title="عدد المرات اللي رجع فيها الايتم في وقت القفل">حتى القفل ×'+o.c+'</span>':'');
+    body+='<tr><td class="it">'+esc(o.it)+'</td><td class="num">'+o.n+'</td>'
+      +'<td class="num hbar"><span style="width:'+Math.max(4,Math.round(o.h/maxH*100))+'%;background:'+color(b.name)+';opacity:.28"></span><em>'+fmtDurH(o.h)+'</em></td>'
+      +'<td class="num">'+fmtDurH(o.avg)+'</td><td>'+chips+'</td><td>'+status+'</td></tr>';
+  });
+  var foot=list.length?'<tfoot><tr><td>الإجمالي</td><td class="num">'+tot.stops+'</td><td class="num">'+fmtDurH(tot.hours)+'</td><td class="num">'+fmtDurH(tot.avg)+'</td><td></td><td></td></tr></tfoot>':'';
+  return '<details class="branch" data-bn="'+esc(b.name)+'" open><summary><b><span style="color:'+color(b.name)+'">●</span> '+esc(b.name)+'</b>'
+    +'<span class="stat"><strong class="num">'+tot.items+'</strong> ايتم</span>'
+    +'<span class="stat"><strong class="num">'+tot.stops+'</strong> مرة وقف</span>'
+    +'<span class="stat"><strong class="num">'+fmtDurH(tot.hours)+'</strong> مدة الوقف</span></summary>'
+    +'<div class="body"><div class="tbl-wrap"><table>'+head+body+foot+'</table></div></div></details>';
+}
+
+/* ---------- السبب × الفرع ---------- */
+function renderReasons(rows){
+  var shown=shownBranches();
+  var reasons=D.reasons.slice();
+  rows.forEach(function(r){ if(reasons.indexOf(r.r)<0) reasons.push(r.r); });   // سبب جديد يظهر لوحده
+  var cnt={}, hrs={};
+  rows.forEach(function(r){ var k=r.r+'|'+r.bkey; cnt[k]=(cnt[k]||0)+1; hrs[k]=(hrs[k]||0)+r.h; });
+
+  var head='<tr><th>السبب</th>'+shown.map(function(b){return '<th class="num">'+esc(b.name)+'</th>';}).join('')+'<th class="num">الإجمالي</th></tr>';
+  var body='', colTot=shown.map(function(){return {n:0,h:0};});
+  reasons.forEach(function(r){
+    var tn=0, th=0, tds='';
+    shown.forEach(function(b,i){
+      var k=r+'|'+b.key, n=cnt[k]||0, h=hrs[k]||0;
+      tn+=n; th+=h; colTot[i].n+=n; colTot[i].h+=h;
+      tds+='<td class="num">'+(n?'<b>'+n+'</b> <span class="pill gray">'+fmtDurH(h)+'</span>':'<span style="color:#B3A68F">0</span>')+'</td>';
+    });
+    body+='<tr><td class="it" style="border-inline-start:4px solid '+reasonColor(r)+'"><span class="rc-dot" style="background:'+reasonColor(r)+'"></span>'+esc(r)+'</td>'+tds+'<td class="num"><b>'+tn+'</b> <span class="pill gray">'+fmtDurH(th)+'</span></td></tr>';
+  });
+  var gn=0, gh=0; colTot.forEach(function(c){gn+=c.n;gh+=c.h;});
+  var foot='<tfoot><tr><td>الإجمالي</td>'+colTot.map(function(c){return '<td class="num">'+c.n+' <span class="pill gray">'+fmtDurH(c.h)+'</span></td>';}).join('')+'<td class="num">'+gn+' <span class="pill gray">'+fmtDurH(gh)+'</span></td></tr></tfoot>';
+  $('pivot').innerHTML='<table>'+head+body+foot+'</table>';
+
+  var ds=reasons.map(function(r){
+    return { label:r, data:shown.map(function(b){return cnt[r+'|'+b.key]||0;}), backgroundColor:reasonColor(r), borderRadius:2 };
+  });
+  mkChart('chReasons',{ type:'bar', data:{ labels:shown.map(function(b){return b.name;}), datasets:ds },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',rtl:true}},
+      scales:{ x:{stacked:true}, y:{stacked:true,beginAtZero:true,title:{display:true,text:'عدد مرات الوقف'}} } } });
+}
+
+/* ---------- السجل ---------- */
+function renderLog(rows){
+  var list=rows.slice().sort(function(a,b){ return rowStamp(a)<rowStamp(b)?1:rowStamp(a)>rowStamp(b)?-1:0; });
+  var LIM=500, shown=list.slice(0,LIM);
+  var head='<tr><th>التاريخ</th><th>الفرع</th><th>الايتم</th><th class="num">وقف</th><th class="num">رجع</th><th class="num">المدة (h:mm:ss)</th><th>السبب</th><th>ملاحظات</th></tr>';
+  var body='';
+  if(!shown.length) body='<tr><td colspan="8" class="empty">مفيش سجل في الفترة دي.</td></tr>';
+  shown.forEach(function(r){
+    var tags='';
+    if(r.o) tags+=' <span class="pill danger">لسه موقوف</span>';
+    if(r.c) tags+=' <span class="pill soft">حتى القفل</span>';
+    if(r.v) tags+=' <span class="pill gray">مراجعة: نفس الوقتين</span>';
+    body+='<tr><td class="num">'+esc(r.d)+'</td><td>'+esc(r.b)+'</td><td class="it">'+esc(r.it)+'</td><td class="num">'+esc(fmtTime(r.st))+'</td><td class="num">'+(r.en?esc(fmtTime(r.en)):'—')+'</td>'
+      +'<td class="num"><b>'+esc(durStr(r))+'</b>'+tags+'</td><td>'+esc(r.r)+'</td><td>'+esc(r.n)+'</td></tr>';
+  });
+  var note=list.length>LIM?'<div class="warn-note" style="margin:10px">بيتعرض أول '+LIM+' صف من '+list.length+'. ضيّق الفترة أو الفرع لعرض الباقي.</div>':'';
+  $('logTable').innerHTML=note+'<table>'+head+body+'</table>';
+}
+
+/* ---------- Post Grid: عرض شبكي متجاوب للسجلات ---------- */
+function rowStamp(r){ return r.d + '-' + (100000 + (+r.stv || 0)); }
+
+function gridCmp(a,c){
+  if(G.sort==='old') return rowStamp(a)<rowStamp(c)?-1:rowStamp(a)>rowStamp(c)?1:0;
+  if(G.sort==='dur') return (c.h-a.h) || (rowStamp(a)<rowStamp(c)?1:-1);
+  if(G.sort==='item') return a.it.localeCompare(c.it,'ar');
+  if(G.sort==='branch') return a.b.localeCompare(c.b,'ar') || (rowStamp(a)<rowStamp(c)?1:-1);
+  return rowStamp(a)<rowStamp(c)?1:rowStamp(a)>rowStamp(c)?-1:0;   // new
+}
+
+function postCard(r){
+  var open=!!r.o, tags='';
+  if(r.c) tags+='<span class="pill soft">حتى القفل</span>';
+  if(r.v) tags+='<span class="pill gray">مراجعة</span>';
+  var action=open
+    ? '<button class="btn sm" data-resume="1" data-b="'+esc(r.bkey)+'" data-x="'+r.x+'" data-it="'+esc(r.it)+'">تسجيل تشغيل</button>'
+    : '<span class="pc-dur">'+esc(durStr(r))+'</span>';
+  return '<article class="post-card'+(open?' open':'')+'">'
+    +'<div class="pc-top"><div><div class="pc-name">'+esc(r.it)+'</div>'
+    +'<div class="pc-branch"><i style="background:'+color(r.b)+'"></i>'+esc(r.b)+'</div></div>'
+    +'<span class="pill '+(open?'danger':'ok')+'">'+(open?'موقوف':'اشتغل')+'</span></div>'
+    +'<div class="pc-times">'
+      +'<div>وقف<b class="num">'+esc(fmtTime(r.st))+'</b></div>'
+      +'<div>رجع<b class="num">'+(r.en?esc(fmtTime(r.en)):'—')+'</b></div>'
+      +'<div>التاريخ<b class="num">'+esc(r.d)+'</b></div>'
+      +'<div>المدة<b class="num">'+esc(durStr(r))+'</b></div>'
+    +'</div>'
+    +'<div class="pc-reason">'+esc(r.r||'—')+(r.n?'<div class="pc-note">'+esc(r.n)+'</div>':'')+'</div>'
+    +'<div class="pc-foot"><span class="pc-tags">'+tags+'</span>'+action+'</div>'
+    +'</article>';
+}
+
+function renderGrid(rows){
+  if(!D) return;
+  rows = rows || filtered();
+  var list=rows.filter(function(r){
+    if(G.status==='open') return !!r.o;
+    if(G.status==='closed') return !r.o;
+    return true;
+  });
+  list.sort(function(a,c){
+    if(G.group && a.bkey!==c.bkey) return a.b.localeCompare(c.b,'ar') || a.bkey.localeCompare(c.bkey,'ar');
+    return gridCmp(a,c);
+  });
+  var el=$('postGrid');
+  el.className='post-grid'+(G.compact?' compact':'');
+  var cnt=$('gCount'); if(cnt) cnt.textContent=list.length+' كارت';
+  if(!list.length){ el.innerHTML='<div class="grid-empty">مفيش بيانات مطابقة للفلاتر الحالية.</div>'; return; }
+  var html='', last='', counts={};
+  list.forEach(function(r){ counts[r.bkey]=(counts[r.bkey]||0)+1; });
+  list.forEach(function(r){
+    if(G.group && r.bkey!==last){
+      var n=counts[r.bkey];
+      var b=branchObj(r.bkey), label=b&&b.restaurantName?b.restaurantName+' — '+r.b:r.b;
+      html+='<div class="grid-group-head" style="grid-column:1/-1"><span style="color:'+color(r.b)+'">●</span> '+esc(label)+' <span class="pill gray">'+n+'</span></div>';
+      last=r.bkey;
+    }
+    html+=postCard(r);
+  });
+  el.innerHTML=html;
+}
+
+/* ---------- الموقوف حاليا ---------- */
+function renderOpen(){
+  var list=D.all.filter(function(r){ return r.o && (!S.rest||r.rest===S.rest) && (S.branch==='all'||r.bkey===S.branch); });
+  var el=$('openList');
+  if(!list.length){ el.innerHTML='<div class="panel empty">مفيش ايتمات موقوفة حاليا. 👍</div>'; return; }
+  var html='', byBranch=rowsByBranch(list);
+  shownBranches().forEach(function(b){
+    var rs=(byBranch[b.key]||[]).sort(function(a,c){return c.h-a.h;});
+    if(!rs.length) return;
+    html+='<h3 class="branch-title">'+esc(b.name)+'</h3><div class="open-list">';
+    rs.forEach(function(r){
+      html+='<div class="open-item"><div class="row1"><b>'+esc(r.it)+'</b><span class="pill danger num" title="مدة الوقف '+esc(durStr(r))+'">'+esc(durStr(r))+'</span></div>'
+        +'<div class="meta">وقف '+esc(r.d)+' الساعة '+esc(fmtTime(r.st))+'</div>'
+        +'<div class="meta">السبب: '+esc(r.r)+'</div>'
+        +'<button class="btn" data-resume="1" data-b="'+esc(b.key)+'" data-x="'+r.x+'" data-it="'+esc(r.it)+'">تسجيل تشغيل الآن</button></div>';
+    });
+    html+='</div>';
+  });
+  el.innerHTML=html;
+}
+
+/* تشغيل ايتم: ضغطة أولى = تأكيد، ضغطة تانية = تنفيذ */
+function onResumeClick(btn){
+  if(btn.getAttribute('data-arm')!=='1'){
+    btn.setAttribute('data-arm','1'); btn.textContent='اضغط تاني للتأكيد'; btn.classList.add('warn');
+    setTimeout(function(){ if(btn.getAttribute('data-arm')==='1'){ btn.removeAttribute('data-arm'); btn.textContent='تسجيل تشغيل الآن'; btn.classList.remove('warn'); } },4000);
+    return;
+  }
+  btn.disabled=true;
+  api('resumeStop',[btn.getAttribute('data-b'), btn.getAttribute('data-x'), btn.getAttribute('data-it')],
+    function(res){ toast('تم تسجيل التشغيل الساعة '+fmtTime(res.time),'ok'); applyFresh(res); },
+    function(e){ btn.disabled=false; toastErr(e); });
+}
+
+/* بياخد الداشبورد المحدّث اللي بيرجع مع رد السيرفر (data) ويعرضه على طول من غير نداء تاني — ده اللي بيخلي التحديث سريع */
+function applyFresh(res){
+  if(res && res.data){ setData(res.data,true); primeStopSeen(); render(); }   // تحديث بعد عملية المستخدم نفسه: من غير صوت
+  else load(true,true);   // احتياطي لو السيرفر مرجّعش data لأي سبب (تحميل صامت من غير ما يغطي على رسالة النجاح)
+}
+
+/* =====================================================
+   المودال (إضافة ايتم / ريزون / تسجيل إيقاف)
+   ===================================================== */
+function openModal(title, html, submitText, onSubmit){
+  $('mTitle').textContent=title; $('mBody').innerHTML=html; $('mSubmit').textContent=submitText;
+  document.querySelector('#modal .dlg').classList.remove('wide','is-success');
+  $('mSubmit').removeAttribute('data-arm'); $('mSubmit').classList.remove('warn');
+  $('mSubmit').disabled=false; $('mSubmit').onclick=onSubmit; $('modal').hidden=false;
+  $('mCancel').disabled=false; $('mCancel').textContent='إلغاء';
+  setTimeout(function(){ var f=$('mBody').querySelector('input:not([readonly]),select,textarea'); if(f) f.focus(); },40);
+}
+function closeModal(){ $('modal').hidden=true; }
+
+/* استدعاء دالة سيرفر من المودال (التوكن بيتضاف تلقائي) */
+function showOpSuccess(meta){
+  var body=$('mBody'); if(!body) return;
+  var strip=document.createElement('div');
+  strip.className='op-success';
+  strip.innerHTML='<span class="op-check" aria-hidden="true">✓</span>'
+    +'<span class="op-name">'+esc(meta.name)+'</span>'
+    +(meta.kind?'<span class="op-kind">'+esc(meta.kind)+'</span>':'')
+    +'<span class="op-action">'+esc(meta.action)+'</span>';
+  body.insertBefore(strip, body.firstChild);
+  var btn=$('mSubmit'); if(btn) btn.disabled=true;
+  var cancel=$('mCancel'); if(cancel){ cancel.disabled=true; cancel.textContent='تم'; }
+  var dlg=document.querySelector('#modal .dlg'); if(dlg) dlg.classList.add('is-success');
+  rememberOp(meta);
+}
+function callServer(fn, args, okMsg, meta){
+  var btn=$('mSubmit'); btn.disabled=true;
+  api(fn,args,
+    function(res){
+      btn.disabled=false;
+      if(meta && meta.name){
+        // بنعرض ✓ جنب الاسم جوه المودال، وبعدها نقفله ونظهر التوست
+        var m={name:(res&&res.name)||meta.name, kind:meta.kind, action:meta.action};
+        if(res && res.already) m.action='موجود بالفعل في DATA';
+        else if(res && res.missing) m.action='مش موجود في DATA — مفيش تغيير';
+        showOpSuccess(m);
+        setTimeout(function(){ closeModal(); toastOp(m); applyFresh(res); }, 1500);
+      }else{
+        closeModal(); toast(okMsg,'ok'); applyFresh(res);
+      }
+    },
+    function(e){ btn.disabled=false; toastErr(e); });
+}
+
+/* سبب فيه "أخرى"/"اخرى" → محتاج وصف يكتبه الدسباتشر */
+function isOtherReason(r){ return /اخرى|أخرى/.test(r||''); }
+
+function armButton(btn, armLabel, onConfirm){
+  btn.onclick=function(){
+    if(btn.getAttribute('data-arm')!=='1'){
+      btn.setAttribute('data-arm','1'); btn.dataset.orig=btn.textContent; btn.textContent=armLabel; btn.classList.add('warn');
+      setTimeout(function(){ if(btn.getAttribute('data-arm')==='1'){ btn.removeAttribute('data-arm'); btn.textContent=btn.dataset.orig; btn.classList.remove('warn'); } },4000);
+      return;
+    }
+    btn.removeAttribute('data-arm'); btn.classList.remove('warn');
+    onConfirm();
+  };
+}
+
+/* =====================================================
+   تسجيل إيقاف: براند ← فروع ← أصناف/أسباب (قوائم متسلسلة)
+   ===================================================== */
+var STOP={rid:'',data:null,cache:{}};
+
+function stopBrandName(rid){
+  var r=((D&&D.restaurants)||[]).filter(function(x){return x.id===rid;})[0];
+  return r?r.name:(rid||'');
+}
+function stopBranchByKey(res,key){
+  return ((res&&res.branches)||[]).filter(function(b){return b.key===key;})[0]||null;
+}
+/* أصناف متاحة للإيقاف: في الفرع المحدد، أو اتحاد أصناف فروع البراند (مع استبعاد الموقوف في كل الفروع) */
+function stopItemPool(res,branchKey,scope){
+  if(scope!=='all'){
+    var b=stopBranchByKey(res,branchKey);
+    if(!b) return [];
+    var stopped={};
+    (b.stopped||[]).forEach(function(x){stopped[String(x).toLowerCase()]=1;});
+    return (b.items||[]).filter(function(it){return !stopped[String(it).toLowerCase()];});
+  }
+  var names={},total={},stoppedCount={};
+  ((res&&res.branches)||[]).forEach(function(b){
+    var st={};
+    (b.stopped||[]).forEach(function(x){st[String(x).toLowerCase()]=1;});
+    (b.items||[]).forEach(function(it){
+      var k=String(it).toLowerCase();
+      names[k]=names[k]||it;
+      total[k]=(total[k]||0)+1;
+      if(st[k]) stoppedCount[k]=(stoppedCount[k]||0)+1;
+    });
+  });
+  return Object.keys(names).filter(function(k){return (stoppedCount[k]||0)<(total[k]||0);})
+    .map(function(k){return names[k];});
+}
+function stopReasonPool(res,branchKey,scope){
+  var out={};
+  if(scope!=='all'){
+    var b=stopBranchByKey(res,branchKey);
+    (b?b.reasons||[]:[]).forEach(function(r){out[r]=1;});
+  }else{
+    ((res&&res.branches)||[]).forEach(function(b){ (b.reasons||[]).forEach(function(r){out[r]=1;}); });
+  }
+  return Object.keys(out);
+}
+function stopResultMessage(r,item){
+  item=(r&&r.item)||item||'الصنف';
+  if(!r||r.scope!=='all'){
+    return {msg:'تم تسجيل إيقاف "'+item+'" في فرع '+(r&&r.branch||'')+' الساعة '+fmtTime(r&&r.time),type:'ok'};
+  }
+  var bad=((r&&r.results)||[]).filter(function(x){return !x.ok;});
+  if(!bad.length){
+    return {msg:'تم إيقاف "'+item+'" في كل فروع '+(r.restaurantName||'البراند')+' ('+r.applied+' فرع) الساعة '+fmtTime(r.time),type:'ok'};
+  }
+  var first=bad[0];
+  return {msg:'تم إيقاف "'+item+'" في '+r.applied+' فرع، واتخطى '+bad.length+' فرع — أول سبب: '+first.error+' ('+first.branch+')',type:'warn'};
+}
+
+function actLogStop(){
+  if(!D || !D.branches.length){ toast('لا توجد فروع متاحة لتنفيذ العملية.','warn'); return; }
+  var isBranch=(D.me.role==='branch');
+  var ownBranch=isBranch?branchObj(D.me.branch):null;
+  if(isBranch && !ownBranch){ toast('حسابك غير مربوط بفرع نشط. كلّم مدير النظام.','warn'); return; }
+  var rid0=(isBranch&&D.me.restaurant)?D.me.restaurant:S.rest;
+
+  var branchVal=function(scope){
+    if(isBranch) return ownBranch.key;
+    return (scope||STOP.scope)==='all' ? '' : $('lBranch').value;
+  };
+  var brandField=isBranch
+    ? '<label>البراند</label><input type="text" value="'+esc(stopBrandName(D.me.restaurant))+'" readonly>'
+      +'<label>الفرع</label><input type="text" value="'+esc(ownBranch.name)+'" readonly>'
+    : '<label for="lBrand">البراند</label><select id="lBrand"></select>'
+      +'<label for="lScope">نطاق الإيقاف</label><select id="lScope">'
+      +'<option value="branch">فرع واحد محدد</option>'
+      +'<option value="all">كل فروع البراند دفعة واحدة</option>'
+      +'</select>'
+      +'<label for="lBranch">الفرع</label><select id="lBranch"></select>';
+
+  openModal('تسجيل إيقاف صنف',
+    brandField
+    +'<p class="hint" id="stopScopeHint" hidden></p>'
+    +'<label for="lItem">الصنف (اكتب للبحث واختار من القايمة)</label><input id="lItem" list="itemsDl" type="text" autocomplete="off" placeholder="ابحث باسم الصنف"><datalist id="itemsDl"></datalist>'
+    +'<label for="lReason">سبب الإيقاف (إجباري)</label><select id="lReason"></select>'
+    +'<div id="lNoteWrap" hidden><label for="lNote">وصف السبب (يكتبه الدسباتشر بالفرع)</label><textarea id="lNote" maxlength="300" placeholder="اكتب تفاصيل السبب هنا"></textarea></div>'
+    +'<p class="hint" id="stopBrandHint">وقت الإيقاف بيتسجل تلقائي (الآن بتوقيت القاهرة)، والبراند والفرع بيتسجلوا مع كل صف. لما الصنف يرجع اعمل له "تسجيل تشغيل".</p>',
+    'تسجيل الإيقاف',
+    function(){
+      var res=STOP.data;
+      if(!res){ toast('لسه بنحمّل بيانات البراند — استنى لحظة وجرّب تاني.','warn'); return; }
+      var scope=isBranch?'branch':($('lScope')?$('lScope').value:'branch');
+      var bk=branchVal(scope);
+      var raw=$('lItem').value.trim().toLowerCase();
+      var poolScope=(scope==='all')?{branches:(res.branches||[]).filter(function(b){return !b.closed;}),restaurantName:res.restaurantName}:res;
+      var it=stopItemPool(poolScope,bk,scope).filter(function(x){return String(x).toLowerCase()===raw;})[0];
+      var reason=$('lReason').value, note=$('lNote')?$('lNote').value.trim():'';
+      if(!it){ toast(scope==='all'?'اختار الصنف من القايمة (لازم يكون متاح في فرع مفتوح واحد على الأقل)':'اختار الصنف من القايمة (اكتب جزء من الاسم واختار)','warn'); return; }
+      if(!reason){ toast('لازم تختار سبب الإيقاف من القايمة','warn'); return; }
+      if(isOtherReason(reason) && !note){ toast('اكتب وصف السبب الأول','warn'); return; }
+      var rid=isBranch?(D.me.restaurant||''):($('lBrand')?$('lBrand').value:rid0);
+      var btn=$('mSubmit'); btn.disabled=true;
+      api('logStop',[rid,bk,it,reason,note,scope],function(r){
+        btn.disabled=false;
+        closeModal();
+        var m=stopResultMessage(r,it);
+        toast(m.msg,m.type);
+        applyFresh(r);
+      },function(e){ btn.disabled=false; toastErr(e); });
+    });
+
+  var submit=$('mSubmit'), hint=$('stopScopeHint'), brandHint=$('stopBrandHint');
+  var setBusy=function(on,msg){
+    submit.disabled=!!on;
+    if(msg && brandHint) brandHint.textContent=msg;
+  };
+
+  function fillBrands(res){
+    if(isBranch || !$('lBrand')) return;
+    var list=(res&&res.brands&&res.brands.length)?res.brands:((D.restaurants||[]).filter(function(r){return r.active!==false;}));
+    var sig=list.map(function(r){return r.id+':'+r.name;}).join(',');
+    var sel=$('lBrand');
+    if(sel.getAttribute('data-sig')!==sig){
+      sel.innerHTML=list.map(function(r){return '<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>';}).join('');
+      sel.setAttribute('data-sig',sig);
+    }
+    sel.value=STOP.rid;
+  }
+
+  function fillBranches(){
+    if(isBranch || !$('lBranch')) return;
+    var res=STOP.data, list=(res&&res.branches)||[];
+    var sel=$('lBranch'), sig=list.map(function(b){return b.key+':'+b.name+':'+(b.closed?'1':'0');}).join(',');
+    if(sel.getAttribute('data-sig')!==sig){
+      sel.innerHTML=list.length?list.map(function(b){
+        return '<option value="'+esc(b.key)+'">'+esc(b.name)+(b.closed?' — مقفول حاليًا':'')+'</option>';
+      }).join(''):'<option value="">لا توجد فروع</option>';
+      sel.setAttribute('data-sig',sig);
+    }
+    if(list.some(function(b){return b.key===S.branch;})) sel.value=S.branch;
+    else if(list.length) sel.value=list[0].key;
+  }
+
+  function fillLists(){
+    var res=STOP.data;
+    if(!res) return;
+    var scope=isBranch?'branch':($('lScope')?$('lScope').value:'branch');
+    STOP.scope=scope;
+    var bk=branchVal(scope);
+    var openCount=(res.branches||[]).filter(function(b){return !b.closed;}).length;
+    var poolScope=(scope==='all')?{branches:(res.branches||[]).filter(function(b){return !b.closed;}),restaurantName:res.restaurantName}:res;
+    var items=stopItemPool(poolScope,bk,scope);
+    var reasons=stopReasonPool(poolScope,bk,scope);
+    $('itemsDl').innerHTML=items.map(function(it){return '<option value="'+esc(it)+'"></option>';}).join('');
+    var prev=$('lReason').value;
+    $('lReason').innerHTML='<option value="" selected disabled>— اختار السبب —</option>'
+      +reasons.map(function(r){return '<option value="'+esc(r)+'">'+esc(r)+'</option>';}).join('');
+    if(prev && reasons.indexOf(prev)>=0) $('lReason').value=prev;
+    $('lNoteWrap').hidden=!isOtherReason($('lReason').value);
+    if($('lBranch')) $('lBranch').disabled=(scope==='all');
+
+    var blocked='';
+    if(scope==='all'){
+      hint.hidden=false;
+      if(!openCount){
+        blocked='كل فروع '+res.restaurantName+' مقفولة حاليًا حسب مواعيد العمل — مفيش إيقاف ممكن دلوقتي.';
+      }else{
+        hint.textContent='هيتم الإيقاف في '+openCount+' فرع مفتوح من أصل '+(res.branches||[]).length+' فرع في '+res.restaurantName+'. الفروع المقفولة أو اللي مش فيها الصنف/السبب هتتخطى مع بيان السبب.';
+      }
+    }else{
+      hint.hidden=true;
+      var b=stopBranchByKey(res,bk);
+      if(b && b.closed) blocked='الفرع "'+b.name+'" مقفول حاليًا حسب مواعيد العمل — مينفعش تسجل إيقاف.';
+    }
+    if(blocked){ hint.hidden=false; hint.textContent=blocked; }
+    submit.disabled=!!blocked;
+  }
+
+  function loadBrand(rid){
+    var cached=STOP.cache[rid];
+    if(cached && (Date.now()-cached.at)<30000){
+      STOP.data=cached.res; fillBranches(); fillLists(); return;
+    }
+    setBusy(true,'جارِ تحميل فروع وأصناف البراند...');
+    api('getStopOptions',[rid],function(res){
+      STOP.cache[rid]={at:Date.now(),res:res};
+      if(rid!==STOP.rid) return;
+      STOP.data=res;
+      fillBrands(res);
+      fillBranches();
+      fillLists();
+      setBusy(false,'وقت الإيقاف بيتسجل تلقائي (الآن بتوقيت القاهرة)، والبراند والفرع بيتسجلوا مع كل صف.');
+    },function(e){
+      if(rid!==STOP.rid) return;
+      submit.disabled=true;
+      setBusy(true,'تعذر تحميل بيانات البراند. اقفل النافذة وجرّب تاني.');
+      toastErr(e);
+    });
+  }
+
+  STOP.rid=rid0; STOP.data=null; STOP.scope='branch';
+  setBusy(true,'جارِ تحميل بيانات البراند...');
+  if(!isBranch && $('lBrand')){
+    $('lBrand').addEventListener('change',function(){
+      STOP.rid=this.value;
+      loadBrand(STOP.rid);
+    });
+    $('lScope').addEventListener('change',fillLists);
+    $('lBranch').addEventListener('change',fillLists);
+  }
+  $('lReason').addEventListener('change',function(){ $('lNoteWrap').hidden=!isOtherReason(this.value); });
+  loadBrand(rid0);
+}
+
+function actLists(){
+  loading(true);
+  api('refreshLists',[S.rest],
+    function(){ loading(false); toast('تم تحديث قوايم الاختيار لفرع/فروع '+brandLabel(),'ok'); },
+    function(e){ loading(false); toastErr(e); });
+}
+
+/* مسح كل سجلات الفروع — باسورد الأدمن + تأكيد مزدوج */
+function actClearData(){
+  if(!needAdmin()) return;
+  openModal('مسح كل الداتا',
+    '<p class="hint" style="color:var(--danger-ink)"><b>تحذير:</b> هيتم مسح كل سجلات الوقف والرجوع من شيتات الفروع نهائيًا، والخطوة دي مينفعش تترجع.</p>'
+    +'<p class="hint">الايتمات والأسباب والمستخدمون وأوقات العمل وهياكل الشيتات مش هيتأثروا.</p>'
+    +adminUserField('wipeAdmin')
+    +'<label for="wipePass">باسورد الأدمن</label><input id="wipePass" type="password" autocomplete="current-password" placeholder="اكتب باسورد حسابك">'
+    +'<label for="wipeWord">اكتب كلمة <b>امسح</b> للتأكيد</label><input id="wipeWord" type="text" autocomplete="off" placeholder="امسح">',
+    'مسح كل الداتا');
+  armButton($('mSubmit'),'متأكد؟ اضغط تاني للمسح',function(){
+    if(!checkAdminUserField('wipeAdmin')) return;
+    var pass=$('wipePass').value;
+    if(!pass){ toast('اكتب باسورد الأدمن','warn'); $('wipePass').focus(); return; }
+    if($('wipeWord').value.trim()!=='امسح'){ toast('اكتب كلمة "امسح" للتأكيد','warn'); $('wipeWord').focus(); return; }
+    var btn=$('mSubmit'); btn.disabled=true;
+    api('clearAllData',[pass],function(res){
+      btn.disabled=false; closeModal();
+      var n=(res&&res.total)||0, c=(res&&res.cleared)||[];
+      toast('تم مسح '+n+' صف من '+c.length+' فرع','ok');
+      applyFresh(res);
+    },function(e){ btn.disabled=false; toastErr(e); });
+  });
+}
+
+/* =====================================================
+   إدارة المستخدمين (مانجمنت بس)
+   ===================================================== */
+var ULIST=[];
+function actUsers(){
+  loading(true);
+  api('listUsers',[],function(l){ loading(false); showUsers(l); },function(e){ loading(false); toastErr(e); });
+}
+
+function showUsers(list, creds){
+  ULIST=list;
+  var LBL={management:'مانجمنت',branch:'دسباتشر فرع',agent:'ايجينت'};
+  var rows=list.map(function(u){
+    var userBranch=branchObj(u.branch);
+    var restaurant=(D.restaurants||[]).filter(function(r){return r.id===u.restaurant;})[0];
+    return '<tr><td class="it">'+esc(u.username)+'</td><td>'+esc(LBL[u.role]||u.role)+'</td>'
+      +'<td>'+(u.isAdmin?'<span class="pill soft">مدير النظام</span>':'مستخدم عادي')+'</td>'
+      +'<td>'+esc(u.role==='management'?'—':(userBranch?userBranch.name:(u.branch||'—')))+'</td>'
+      +'<td>'+esc(restaurant?restaurant.name:(u.restaurant||'—'))+'</td>'
+      +'<td>'+(u.active?'<span class="pill ok">نشط</span>':'<span class="pill gray">موقوف</span>')+'</td>'
+      +'<td><button type="button" class="btn ghost sm" data-uedit="'+esc(u.username)+'">تعديل</button> '
+      +'<button type="button" class="btn ghost sm" data-udel="'+esc(u.username)+'">حذف</button></td></tr>';
+  }).join('');
+  var bOpts='<option value="">— اختار الفرع —</option>'+D.branches.map(function(b){
+    return '<option value="'+esc(b.key)+'">'+esc((b.restaurantName?b.restaurantName+' — ':'')+b.name)+'</option>';
+  }).join('');
+  var restOpts=(D.restaurants||[]).map(function(r){
+    return '<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>';
+  }).join('');
+  var credsHtml='';
+  if(creds && creds.length){
+    credsHtml='<div class="creds"><b>بيانات الدخول الجديدة — انسخها دلوقتي، مش هتظهر تاني:</b><br>'
+      +creds.map(function(c){ return esc(c.branch)+': <code>'+esc(c.username)+'</code> / <code>'+esc(c.password)+'</code>'; }).join('<br>')+'</div>';
+  }
+  openModal('إدارة المستخدمين',
+    '<div class="tbl-wrap"><table style="min-width:700px"><tr><th>اليوزر</th><th>الدور</th><th>صلاحية النظام</th><th>الفرع</th><th>المطعم</th><th>الحالة</th><th></th></tr>'
+    +(rows||'<tr><td colspan="7" class="empty">مفيش يوزرات.</td></tr>')+'</table></div>'
+    +credsHtml
+    +'<div style="margin-top:10px"><button type="button" class="btn ghost sm" id="uMake">إنشاء يوزر لكل فرع (باسورد عشوائي)</button></div>'
+    +'<h3 style="margin:18px 0 0;font-size:15px" id="uFormTitle">إضافة يوزر</h3>'
+    +'<label for="uName">اسم المستخدم (إنجليزي/أرقام)</label><input id="uName" type="text" dir="ltr" autocomplete="off" maxlength="30">'
+    +'<label for="uPass">كلمة السر</label><input id="uPass" type="password" dir="ltr" autocomplete="new-password" placeholder="6 حروف/أرقام على الأقل">'
+    +'<label for="uRole">الدور</label><select id="uRole">'
+      +'<option value="branch">دسباتشر فرع (يسجّل إيقاف/تشغيل لفرعه)</option>'
+      +'<option value="agent">ايجينت (يشوف الايتمات الموقوفة والمشتغلة بس)</option>'
+      +'<option value="management">مانجمنت (كل حاجة + التقارير)</option></select>'
+      +'<div class="chkrow"><input id="uAdmin" type="checkbox"><label for="uAdmin" style="margin:0">مدير نظام (Admin) — صلاحيات الإدارة الكاملة</label></div>'
+      +'<label for="uRestaurant">مطعم حساب المانجمنت</label><select id="uRestaurant">'+restOpts+'</select>'
+    +'<label for="uBranch">الفرع</label><select id="uBranch">'+bOpts+'</select>'
+    +'<div class="chkrow"><input id="uActive" type="checkbox" checked><label for="uActive" style="margin:0">اليوزر نشط</label></div>'
+    +'<p class="hint">كل يوزر فرع أو ايجينت لازم يرتبط بفرع واحد. صلاحية مدير النظام متاحة لحسابات المانجمنت فقط.</p>',
+    'حفظ اليوزر',
+    function(){
+      if(!needAdmin()) return;
+      var u={ username:$('uName').value.trim(), password:$('uPass').value, role:$('uRole').value,
+        branch:$('uBranch').value, restaurant:$('uRestaurant').value, active:$('uActive').checked,
+        isAdmin:$('uAdmin').checked };
+      if(!u.username){ toast('اكتب اسم المستخدم','warn'); return; }
+      var btn=$('mSubmit'); btn.disabled=true;
+      api('saveUser',[u],function(l){ toast('تم حفظ اليوزر','ok'); showUsers(l); },function(e){ btn.disabled=false; toastErr(e); });
+    });
+  document.querySelector('#modal .dlg').classList.add('wide');
+
+  var syncRole=function(){
+    var r=$('uRole').value, mg=r==='management';
+    $('uBranch').disabled=mg; $('uRestaurant').disabled=!mg;
+    $('uAdmin').disabled=!mg;
+    if(!mg) $('uAdmin').checked=false;
+    if(mg) $('uBranch').value='';
+  };
+  $('uRole').addEventListener('change',syncRole); syncRole();
+
+  document.querySelectorAll('[data-uedit]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var u=ULIST.filter(function(x){ return x.username===b.getAttribute('data-uedit'); })[0]; if(!u) return;
+      $('uName').value=u.username; $('uName').readOnly=true; $('uRole').value=u.role; $('uBranch').value=u.branch||'';
+      $('uRestaurant').value=u.restaurant||'MAIN';
+      $('uActive').checked=u.active; $('uAdmin').checked=!!u.isAdmin;
+      $('uPass').value=''; $('uPass').placeholder='سيبه فاضي لو مش عايز تغيّر كلمة السر';
+      $('uFormTitle').textContent='تعديل: '+u.username; syncRole(); $('uPass').focus();
+    });
+  });
+  document.querySelectorAll('[data-udel]').forEach(function(b){
+    b.addEventListener('click',function(){
+      actDeleteUser(b.getAttribute('data-udel'), function(l){ toast('تم حذف المستخدم','ok'); showUsers(l); });
+    });
+  });
+  $('uMake').addEventListener('click',function(){
+    if(!needAdmin()) return;
+    var b=this; b.disabled=true;
+    api('createBranchUsers',[],function(res){
+      toast(res.created.length ? 'تم إنشاء '+res.created.length+' يوزر' : 'كل الفروع عندها يوزر بالفعل','ok');
+      showUsers(res.users,res.created);
+    },function(e){ b.disabled=false; toastErr(e); });
+  });
+}
+
+/* حذف مستخدم — نافذة تأكيد صريحة: اسم المستخدم + كلمة سر المدير */
+function actDeleteUser(username, after){
+  if(!needAdmin()) return;
+  openModal('تأكيد حذف المستخدم',
+    '<div class="warn-note">هتحذف المستخدم <b>'+esc(username)+'</b> نهائيًا، وجلساته هتتقفل فورًا. العملية بتتسجل في سجل العمليات.</div>'
+    +adminUserField('duAdmin')
+    +'<label for="duName">اكتب اسم المستخدم للتأكيد</label><input id="duName" type="text" dir="ltr" autocomplete="off" placeholder="'+esc(username)+'">'
+    +'<label for="duPass">كلمة سر المدير (تأكيد الهوية)</label><input id="duPass" type="password" dir="ltr" autocomplete="current-password">'
+    +'<p class="hint">مينفعش تحذف نفسك أو آخر مدير نشط.</p>',
+    'حذف نهائي',
+    function(){
+      if(!checkAdminUserField('duAdmin')) return;
+      var c=$('duName').value.trim(), p=$('duPass').value;
+      if(c.toLowerCase()!==username.toLowerCase()){ toast('اسم المستخدم مش مطابق للتأكيد.','warn'); return; }
+      if(!p){ toast('اكتب كلمة سر المدير.','warn'); return; }
+      var btn=$('mSubmit'); btn.disabled=true; btn.classList.add('warn');
+      api('deleteUser',[username,p],function(l){
+        if(after) after(l); else { toast('تم حذف المستخدم','ok'); showUsers(l); }
+      },function(e){ btn.disabled=false; toastErr(e); });
+    });
+  document.querySelector('#modal .dlg').classList.add('wide');
+  $('mSubmit').classList.add('warn');
+  setTimeout(function(){ var f=$('duName'); if(f) f.focus(); },40);
+}
+
+/* =====================================================
+   سجل العمليات (Audit Log) — مانجمنت بس
+   ===================================================== */
+var AUDIT_ROWS=[];
+function auditRowsTable(list){
+  var h='<thead><tr><th>الوقت</th><th>المستخدم</th><th>الدور</th><th>العملية</th><th>الهدف</th><th>التفاصيل</th><th>النتيجة</th><th>مرجع</th></tr></thead>';
+  var b=(list||[]).map(function(e){
+    var res=/FAIL|ERROR/i.test(e.result||'')?'<span class="pill danger">'+esc(e.result)+'</span>':'<span class="pill ok">'+esc(e.result||'OK')+'</span>';
+    return '<tr><td class="num">'+esc(e.at)+'</td><td class="it">'+esc(e.by)+'</td><td>'+esc(e.role)+'</td>'
+      +'<td>'+esc(e.action)+'</td><td>'+esc(e.target)+'</td><td class="small">'+esc(e.details)+'</td>'
+      +'<td>'+res+'</td><td class="num">'+esc(e.ref)+'</td></tr>';
+  }).join('');
+  return '<div class="tbl-wrap"><table style="min-width:900px">'+h+'<tbody>'+(b||'<tr><td colspan="8" class="empty">مفيش عمليات مسجلة.</td></tr>')+'</tbody></table></div>';
+}
+function actAudit(){
+  if(!needAdmin()) return;
+  loading(true);
+  api('getAuditLog',[300],function(res){
+    loading(false);
+    AUDIT_ROWS=(res && res.entries)||[];
+    openModal('سجل العمليات (Audit Log)', auditRowsTable(AUDIT_ROWS)
+      +'<p class="hint">آخر 300 عملية. السجل بيشمل الدخول/الخروج، تعديل الأوقات، إدارة المستخدمين والفروع، وأي حذف.</p>',
+      'تصدير Excel', function(){
+        downloadXlsx('سجل-العمليات-'+(D?D.now:'')+'.xlsx',[{name:'Audit Log',rows:[
+          ['Timestamp','Actor','Role','Action','Target','Details','Result','Ref']
+        ].concat(AUDIT_ROWS.map(function(e){ return [e.at,e.by,e.role,e.action,e.target,e.details,e.result,e.ref]; }))}]);
+      });
+    document.querySelector('#modal .dlg').classList.add('wide');
+  },function(e){ loading(false); toastErr(e); });
+}
+
+
+function byTimeDesc(a,c){
+  if(a.d!==c.d) return a.d<c.d?1:-1;
+  var x=+a.stv||0, y=+c.stv||0;
+  return x<y?1:x>y?-1:0;
+}
+
+function renderBranchView(){
+  var b=D.branches[0];
+  if(!b){
+    $('brHead').innerHTML='<div class="panel empty">اليوزر ده مش مربوط بفرع. كلّم المدير.</div>';
+    $('brOpen').innerHTML=''; $('brRecent').innerHTML=''; return;
+  }
+  var sh=b.shift||{};
+  $('brHead').innerHTML='<div class="role-head"><div><h2>'+esc(b.name)+'</h2><span class="muted">🕘 '+esc(shiftText(b))+' · قفل '+esc(clock12(b.closeSec))+' · شيفت '+esc(sh.day||D.now)+'</span></div>'
+    +'<button type="button" class="btn" data-do="logStop">⏸ تسجيل إيقاف ايتم</button></div>';
+  $('brClosed').innerHTML=b.closed?'<div class="closed-note">🔒 الفرع مقفول النهاردة حسب مواعيد العمل — تسجيل الإيقاف متوقف لحد وقت الفتح.</div>':'';
+  $('brTimes').innerHTML=branchTimesCard(b.key);
+
+  var open=b.rows.filter(function(r){ return r.o; }).sort(function(a,c){ return c.h-a.h; });
+  if(!open.length) $('brOpen').innerHTML='<div class="panel empty">مفيش ايتمات موقوفة حاليا. 👍</div>';
+  else $('brOpen').innerHTML='<div class="open-list">'+open.map(function(r){
+    return '<div class="open-item"><div class="row1"><b>'+esc(r.it)+'</b><span class="pill danger num" title="مدة الوقف '+esc(durStr(r))+'">'+esc(durStr(r))+'</span></div>'
+      +'<div class="meta">وقف '+esc(r.d)+' الساعة '+esc(fmtTime(r.st))+'</div>'
+      +'<div class="meta">السبب: '+esc(r.r)+'</div>'
+      +'<button class="btn" data-resume="1" data-b="'+esc(b.key)+'" data-x="'+r.x+'" data-it="'+esc(r.it)+'">تسجيل تشغيل الآن</button></div>';
+  }).join('')+'</div>';
+
+  var rec=b.rows.filter(function(r){ return !r.o; }).sort(byTimeDesc);
+  var head='<tr><th>الايتم</th><th>التاريخ</th><th class="num">وقف</th><th class="num">رجع</th><th class="num">المدة (h:mm:ss)</th><th>السبب</th></tr>';
+  var body=rec.length ? rec.map(function(r){
+    return '<tr><td class="it">'+esc(r.it)+'</td><td class="num">'+esc(r.d)+'</td><td class="num">'+esc(fmtTime(r.st))+'</td><td class="num">'+esc(fmtTime(r.en))+'</td>'
+      +'<td class="num"><b>'+esc(durStr(r))+'</b></td><td>'+esc(r.r)+'</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">مفيش نشاط مسجل النهارده أو أمس.</td></tr>';
+  $('brRecent').innerHTML='<table>'+head+body+'</table>';
+}
+
+/* =====================================================
+   أوقات التحضير والتوصيل (قيمة ثابتة لكل فرع — بالدقايق)
+   ===================================================== */
+function timesCurrent(branch){
+  var list=(D&&D.times)||[], b=branchObj(branch), k=normKey(b ? b.key : branch), n=normKey(b ? b.name : branch), out=null;
+  list.forEach(function(t){ if(normKey(t.b)===k || normKey(t.b)===n) out=t; });
+  return out ? {prep:+out.prep, del:+out.del, total:(+out.prep)+(+out.del), by:out.by||'', at:out.at||''} : null;
+}
+/* قيمة الفرع وقت تاريخ معين (آخر تعديل قبل أو يوم التاريخ) — لمقارنة الشهور */
+function timesAt(branch, dateKey){
+  var list=(D&&D.times)||[], b=branchObj(branch), k=normKey(b ? b.key : branch), n=normKey(b ? b.name : branch), out=null;
+  list.forEach(function(t){ if((normKey(t.b)===k || normKey(t.b)===n) && (!t.at || !dateKey || t.at<=dateKey)) out=t; });
+  return out ? {prep:+out.prep, del:+out.del, total:(+out.prep)+(+out.del), by:out.by||'', at:out.at||''} : null;
+}
+function timesPills(t){
+  if(!t) return '<span class="pill gray">⏱ مفيش أوقات مسجلة</span>';
+  return '<span class="pill time">⏱ تحضير '+t.prep+' د</span>'
+    +'<span class="pill time">🛵 توصيل '+t.del+' د</span>'
+    +'<span class="pill time tot">تحضير + توصيل '+t.total+' د</span>';
+}
+function branchObj(name){
+  var list=(D&&D.branches)||[], k=normKey(name), exact=null, matches=[];
+  list.forEach(function(b){
+    if(normKey(b.key)===k) exact=b;
+    if(normKey(b.name)===k) matches.push(b);
+  });
+  return exact || (matches.length===1 ? matches[0] : null);
+}
+/* وصف شيفت الفرع: 9:00 ص → 5:00 ص */
+function shiftText(b){
+  if(!b) return '—';
+  var o=(b.openSec!=null)?b.openSec:parseSec(b.open);
+  var c=(b.closeSec!=null)?b.closeSec:parseSec(b.close);
+  if(o==null||c==null) return '—';
+  return clock12(o)+' → '+clock12(c);
+}
+function hoursPill(b){
+  var sh=b&&b.shift;
+  if(!b) return '';
+  return '<span class="branch-hours" title="شيفت الفرع">🕘 <b>'+esc(shiftText(b))+'</b>'+(sh&&sh.day?' · '+esc(sh.day):'')+'</span>';
+}
+function branchTimesCard(branch){
+  var t=timesCurrent(branch), b=branchObj(branch), mg=(D&&D.me.role==='management');
+  var body = t
+    ? '<div class="times-stat"><span>وقت التحضير</span><b class="num">'+t.prep+'</b><span>دقيقة</span></div>'
+     +'<div class="times-stat"><span>وقت التوصيل</span><b class="num">'+t.del+'</b><span>دقيقة</span></div>'
+     +'<div class="times-stat tot"><span>تحضير + توصيل</span><b class="num">'+t.total+'</b><span>دقيقة</span></div>'
+    : '<div class="muted">لسه مفيش أوقات تحضير وتوصيل مسجلة للفرع ده.</div>';
+  return '<div class="times-card">'
+    +'<div class="branch-hours">🕘 شيفت الفرع: <b>'+esc(shiftText(b))+'</b></div>'
+    +body
+    +'<button class="btn ghost" data-do="editTimes" data-b="'+esc(branch)+'">'+(t?'تعديل الأوقات':'سجّل الأوقات')+'</button>'
+    +(mg?'<button class="btn ghost" data-do="editHours" data-b="'+esc(branch)+'">تعديل أوقات العمل</button>':'')
+    +'</div>';
+}
+function actEditTimes(branch){
+  if(!D) return;
+  var b = (D.me.role==='branch') ? D.me.branch : (branch||'');
+  if(!b){ toast('اختار الفرع الأول','warn'); return; }
+  var t=timesCurrent(b);
+  openModal('وقت التحضير والتوصيل — '+b,
+    '<label for="tPrep">وقت التحضير (دقايق)</label>'
+    +'<input id="tPrep" type="number" min="0" max="600" step="1" inputmode="numeric" value="'+(t?t.prep:'')+'" placeholder="مثال: 10">'
+    +'<label for="tDel">وقت التوصيل (دقايق)</label>'
+    +'<input id="tDel" type="number" min="0" max="600" step="1" inputmode="numeric" value="'+(t?t.del:'')+'" placeholder="مثال: 30">'
+    +'<p class="hint">الأرقام بالدقايق. الإجمالي (تحضير + توصيل) بيتحسب تلقائي، والقيمة دي بتظهر للايجينت في كل الفروع.</p>',
+    'حفظ الأوقات',
+    function(){
+      var p=$('tPrep').value.trim(), d=$('tDel').value.trim();
+      if(p==='' || d===''){ toast('اكتب وقت التحضير ووقت التوصيل','warn'); return; }
+      var pn=Number(p), dn=Number(d);
+      if(!isFinite(pn)||pn<0||pn>600||!isFinite(dn)||dn<0||dn>600){ toast('الأوقات لازم تكون من 0 لـ 600 دقيقة','warn'); return; }
+      var branchRecord=branchObj(b);
+      callServer('saveBranchTimes',[branchRecord ? branchRecord.key : b, pn, dn], '', {name:branchRecord ? branchRecord.name : b, kind:'أوقات التحضير والتوصيل', action:'تحضير '+pn+' د + توصيل '+dn+' د = '+(pn+dn)+' د'});
+    });
+}
+
+/* =====================================================
+   إدارة الفروع: أوقات العمل + إضافة فرع جديد (مانجمنت)
+   ===================================================== */
+function hhmm(sec){ sec=((Math.round(+sec||0)%86400)+86400)%86400; return pad(Math.floor(sec/3600))+':'+pad(Math.floor((sec%3600)/60)); }
+
+function actEditHours(branch){
+  var b=branchObj(branch);
+  if(!b){ toast('الفرع المحدد غير موجود. حدّث البيانات وحاول مرة أخرى.','warn'); return; }
+  var o=(b.openSec!=null)?b.openSec:(parseSec(b.open)||0);
+  var c=(b.closeSec!=null)?b.closeSec:(parseSec(b.close)||0);
+  openModal('أوقات العمل — '+b.name,
+    '<div class="cfg-grid">'
+    +'<label for="hOpen">وقت الفتح<input id="hOpen" type="time" step="60" value="'+hhmm(o)+'"></label>'
+    +'<label for="hClose">وقت القفل<input id="hClose" type="time" step="60" value="'+hhmm(c)+'"></label>'
+    +'</div>'
+    +'<p class="hint">شيفت الفرع = من الفتح لحد القفل. لو القفل بعد نص الليل (مثلاً 5:00 ص) الشيفت بيمتد لليوم اللي بعده، والتقليب بيحصل عند وقت الفتح — مش 12 بالليل.</p>',
+    'حفظ أوقات العمل',
+    function(){
+      var o2=parseSec($('hOpen').value), c2=parseSec($('hClose').value);
+      if(o2==null||c2==null){ toast('حدد وقت الفتح ووقت القفل','warn'); return; }
+      if(o2===c2){ toast('وقت الفتح ووقت القفل مينفعش يكونوا نفس الوقت','warn'); return; }
+      callServer('saveBranchHours',[b.key, $('hOpen').value, $('hClose').value, b.restaurant], '',
+        {name:b.name, kind:'أوقات العمل', action:'فتح '+clock12(o2)+' → قفل '+clock12(c2)});
+    });
+}
+
+/* حذف فرع — نافذة تأكيد: اسم الفرع + كلمة سر المدير + الوضع + موافقة صريحة */
+function actDeleteBranch(name){
+  if(!needAdmin()) return;
+  loading(true);
+  api('branchDeleteInfo',[name],function(info){
+    loading(false);
+    if(!info) { toast('بيانات الفرع المحدد غير متاحة. حدّث البيانات وحاول مرة أخرى.','warn'); return; }
+    var users=(info.users||[]).map(function(u){ return u.username+(u.active?'':' (موقوف)'); }).join('، ');
+    var defaultMode=(info.rows>0)?'block':'cascade';
+    var html='<div class="warn-note"><b>هتحذف فرع: '+esc(info.name)+'</b><br>'
+      +'سجلات التشغيل: <b>'+info.rows+'</b> · موقوف حاليًا: <b>'+info.openRows+'</b> · عدد الفروع الحالي: '+info.branches
+      +(users?('<br>يوزرات الفرع (هتتعطّل): '+esc(users)):'')
+      +(info.hoursRows||info.timesRows?('<br>صفوف أوقات العمل/التحضير المرتبطة: '+(info.hoursRows||0)+' / '+(info.timesRows||0)):'')
+      +'</div>'
+      +'<label for="dbMode">طريقة التعامل مع البيانات المرتبطة</label>'
+      +'<select id="dbMode">'
+      +'<option value="block"'+(defaultMode==='block'?' selected':'')+'>منع الحذف لو فيه سجلات تشغيل (الأكثر أمانًا)</option>'
+      +'<option value="cascade"'+(defaultMode==='cascade'?' selected':'')+'>أرشفة كاملة (Cascade) ثم حذف</option></select>'
+      +adminUserField('dbAdmin')
+      +'<label for="dbName">اكتب اسم الفرع للتأكيد</label><input id="dbName" type="text" autocomplete="off" placeholder="'+esc(info.name)+'">'
+      +'<label for="dbPass">كلمة سر المدير (تأكيد الهوية)</label><input id="dbPass" type="password" dir="ltr" autocomplete="current-password">'
+      +'<div class="chkrow"><input id="dbAck" type="checkbox"><label for="dbAck" style="margin:0">أوافق على حذف الفرع نهائيًا. البيانات بتتأرشف في شيت DELETED_ARCHIVE قبل الحذف.</label></div>'
+      +'<p class="hint">مينفعش تحذف آخر فرع في النظام. كل عملية بتتسجل في الـ Audit Log (مين حذف ومتى).</p>';
+    openModal('تأكيد حذف الفرع', html, 'حذف الفرع', function(){
+      if(!checkAdminUserField('dbAdmin')) return;
+      var c=$('dbName').value.trim(), p=$('dbPass').value, mode=$('dbMode').value, ack=$('dbAck').checked;
+      if(c.toLowerCase()!==info.name.toLowerCase()){ toast('اسم الفرع مش مطابق للتأكيد.','warn'); return; }
+      if(!p){ toast('اكتب كلمة سر المدير.','warn'); return; }
+      if(!ack){ toast('لازم توافق على الحذف الأول.','warn'); return; }
+      var btn=$('mSubmit'); btn.disabled=true; btn.classList.add('warn');
+      api('deleteBranch',[{name:info.name, restaurant:info.restaurant, confirm:c, password:p, mode:mode, ack:true}],function(res){
+        var msg='تم حذف الفرع: '+res.name;
+        if(res.archived) msg+=' — اتأرشف '+res.rows+' سجل (كود: '+res.archiveId+')';
+        toast(msg,'ok');
+        closeModal();
+        applyFresh(res);
+      },function(e){ btn.disabled=false; toastErr(e); });
+    });
+    document.querySelector('#modal .dlg').classList.add('wide');
+    $('mSubmit').classList.add('warn');
+    setTimeout(function(){ var f=$('dbName'); if(f) f.focus(); },40);
+  },function(e){ loading(false); toastErr(e); });
+}
+
+function actBranches(){
+  if(!D) return;
+  var activeRestaurants=(D.restaurants||[]).filter(function(r){ return r.active!==false; });
+  var selectedRest=(S.rest && activeRestaurants.some(function(r){return r.id===S.rest;}))
+    ?S.rest:(activeRestaurants[0]?activeRestaurants[0].id:'');
+  function branchRows(rest){
+    return D.branches.filter(function(b){ return b.restaurant===rest; }).map(function(b){
+    var t=timesCurrent(b.key);
+    return '<tr><td class="it">'+esc(b.name)+'</td>'
+      +'<td class="num">'+esc(clock12(b.openSec))+'</td>'
+      +'<td class="num">'+esc(clock12(b.closeSec))+'</td>'
+      +'<td class="num">'+(t?(t.prep+' + '+t.del+' = <b>'+t.total+'</b>'):'—')+'</td>'
+      +'<td><button type="button" class="btn ghost sm" data-bh="'+esc(b.key)+'">أوقات العمل</button> '
+      +'<button type="button" class="btn ghost sm" data-bdaily="'+esc(b.key)+'">المواعيد اليومية</button> '
+      +'<button type="button" class="btn ghost sm" data-bt="'+esc(b.key)+'">التحضير/التوصيل</button> '
+      +'<button type="button" class="btn ghost sm" data-bd="'+esc(b.key)+'">حذف الفرع</button></td></tr>';
+    }).join('');
+  }
+  var rows=branchRows(selectedRest);
+  openModal('إدارة الفروع وأوقات العمل',
+    '<label for="branchRest">المطعم</label><select id="branchRest">'+activeRestaurants.map(function(r){
+      return '<option value="'+esc(r.id)+'"'+(selectedRest===r.id?' selected':'')+'>'+esc(r.name)+'</option>';
+    }).join('')+'</select>'
+    +'<div class="tbl-wrap"><table style="min-width:760px"><thead><tr><th>الفرع</th><th class="num">يفتح</th><th class="num">يقفل</th><th class="num">تحضير + توصيل (د)</th><th></th></tr></thead><tbody id="branchRows">'
+    +(rows||'<tr><td colspan="5" class="empty">مفيش فروع لهذا المطعم.</td></tr>')+'</tbody></table></div>'
+    +'<div class="cfg-note">شيفت كل فرع بيبدأ من وقت الفتح وينتهي عند وقت القفل. لو القفل بعد نص الليل بيمتد لليوم اللي بعده، والتقليب بيحصل عند وقت الفتح.</div>'
+    +'<h3 style="margin:18px 0 0;font-size:15px">إضافة فرع جديد</h3>'
+    +'<label for="nbRest">المطعم</label><select id="nbRest">'+activeRestaurants.map(function(r){
+      var selected=selectedRest===r.id;
+      return '<option value="'+esc(r.id)+'"'+(selected?' selected':'')+'>'+esc(r.name)+'</option>';
+    }).join('')+'</select>'
+    +'<div class="cfg-grid">'
+    +'<label for="nbName">اسم الفرع<input id="nbName" type="text" maxlength="60" placeholder="مثال: SHEIKH ZAYED"></label>'
+    +'<label for="nbOpen">وقت الفتح<input id="nbOpen" type="time" step="60" value="09:00"></label>'
+    +'<label for="nbClose">وقت القفل<input id="nbClose" type="time" step="60" value="05:00"></label>'
+    +'<label for="nbPrep">التحضير (دقايق)<input id="nbPrep" type="number" min="0" max="600" value="10"></label>'
+    +'<label for="nbDel">التوصيل (دقايق)<input id="nbDel" type="number" min="0" max="600" value="30"></label>'
+    +'</div>'
+    +'<div class="chkrow"><input id="nbUser" type="checkbox" checked><label for="nbUser" style="margin:0">إنشاء يوزر دسباتشر للفرع</label></div>'
+    +'<label for="nbUsername">اسم مستخدم الدسباتشر (إنجليزي — سيبه فاضي وبيتعمل تلقائي)</label><input id="nbUsername" type="text" dir="ltr" maxlength="30" autocomplete="off">'
+    +'<p class="hint">الفرع بيتعمل له شيت جديد بنفس هيكل باقي الفروع، وأوقاته بتظهر للايجينت على طول.</p>',
+    'إضافة الفرع',
+    function(){
+      if(!needAdmin()) return;
+      var name=$('nbName').value.trim();
+      if(!name){ toast('اكتب اسم الفرع','warn'); return; }
+      var info={ name:name, restaurant:$('nbRest').value, open:$('nbOpen').value, close:$('nbClose').value,
+        prep:$('nbPrep').value, del:$('nbDel').value,
+        createUser:$('nbUser').checked, username:$('nbUsername').value.trim() };
+      var btn=$('mSubmit'); btn.disabled=true;
+      api('createBranch',[info],function(res){
+        var o=parseSec(res.open), c=parseSec(res.close);
+        var meta={name:res.name, kind:'فرع جديد', action:'فتح '+clock12(o)+' → قفل '+clock12(c)+' · تحضير '+res.prep+' + توصيل '+res.del+' د'};
+        showOpSuccess(meta);
+        var extra='';
+        if(res.user) extra='<div class="creds"><b>يوزر الدسباتشر الجديد — انسخه دلوقتي:</b><br><code>'+esc(res.user.username)+'</code> / <code>'+esc(res.user.password)+'</code></div>';
+        else if(res.userError) extra='<p class="hint">الفرع اتعمل، لكن يوزر الدسباتشر ماتعملش: '+esc(res.userError)+'</p>';
+        var body=$('mBody'); if(body && extra) body.insertAdjacentHTML('beforeend', extra);
+        var cancel=$('mCancel'); if(cancel){ cancel.disabled=false; cancel.textContent='تم'; }
+        toastOp(meta);
+        applyFresh(res);
+      },function(e){ btn.disabled=false; toastErr(e); });
+    });
+  document.querySelector('#modal .dlg').classList.add('wide');
+  $('branchRest').addEventListener('change',function(){
+    $('branchRows').innerHTML=branchRows(this.value)||'<tr><td colspan="5" class="empty">مفيش فروع لهذا المطعم.</td></tr>';
+    $('nbRest').value=this.value;
+  });
+  $('branchRows').addEventListener('click',function(e){
+    var btn=e.target.closest('button[data-bh],button[data-bdaily],button[data-bt],button[data-bd]');
+    if(!btn) return;
+    if(btn.hasAttribute('data-bh')) actEditHours(btn.getAttribute('data-bh'));
+    else if(btn.hasAttribute('data-bdaily')) actDailyHours(btn.getAttribute('data-bdaily'));
+    else if(btn.hasAttribute('data-bt')) actEditTimes(btn.getAttribute('data-bt'));
+    else if(btn.hasAttribute('data-bd')) actDeleteBranch(btn.getAttribute('data-bd'));
+  });
+  $('nbRest').value=selectedRest;
+}
+
+/* ---------- ريبورت المانجمنت ---------- */
+function renderTimes(rows){
+  var shown=shownBranches(), byBranch=rowsByBranch(rows);
+
+  // 1) ملخص الفروع
+  var h='<thead><tr><th>الفرع</th><th class="num">يفتح</th><th class="num">يقفل</th><th class="num">تحضير (د)</th><th class="num">توصيل (د)</th><th class="num">تحضير + توصيل (د)</th><th class="num">مرات الوقف</th><th class="num">مدة الوقف</th><th>آخر تحديث</th><th></th></tr></thead>';
+  var b='';
+  shown.forEach(function(br){
+    var t=timesCurrent(br.key), s=summarize(byBranch[br.key]||[]);
+    b+='<tr><td class="nm">'+esc(br.name)+'</td>'
+      +'<td class="num">'+esc(clock12(br.openSec))+'</td>'
+      +'<td class="num">'+esc(clock12(br.closeSec))+'</td>'
+      +'<td class="num">'+(t?t.prep:'—')+'</td>'
+      +'<td class="num">'+(t?t.del:'—')+'</td>'
+      +'<td class="num"><b>'+(t?t.total:'—')+'</b></td>'
+      +'<td class="num">'+s.stops+'</td>'
+      +'<td class="num">'+fmtDurH(s.hours)+'</td>'
+      +'<td>'+(t&&t.at?esc(t.at)+(t.by?' — '+esc(t.by):''):'—')+'</td>'
+      +'<td><button class="btn ghost sm" data-do="editTimes" data-b="'+esc(br.key)+'">تعديل</button></td></tr>';
+  });
+  $('timesSummary').innerHTML='<table>'+h+'<tbody>'+(b||'<tr><td colspan="10" class="empty">مفيش فروع.</td></tr>')+'</tbody></table>';
+
+  // 2) مقارنة الشهور
+  var mset={}; D.all.forEach(function(r){ if(r.d) mset[r.d.slice(0,7)]=1; });
+  ((D&&D.times)||[]).forEach(function(t){ if(t.at) mset[t.at.slice(0,7)]=1; });
+  var months=Object.keys(mset).sort().reverse();
+  if(!months.length) months=[D.now.slice(0,7)];
+  var mh='<thead><tr><th>الشهر</th>'+shown.map(function(br){ return '<th class="num">'+esc(br.name)+'</th>'; }).join('')+'<th class="num">متوسط الفروع</th></tr></thead>';
+  var mb='';
+  months.forEach(function(m){
+    var vals=[], cells='';
+    shown.forEach(function(br){
+      var t=timesAt(br.key, m+'-31');
+      if(t){ vals.push(t.total); cells+='<td class="num">'+t.prep+' + '+t.del+' = <b>'+t.total+'</b></td>'; }
+      else cells+='<td class="num">—</td>';
+    });
+    var avg=vals.length?Math.round(vals.reduce(function(a,c){return a+c;},0)/vals.length):null;
+    mb+='<tr><td class="nm">'+esc(m)+'</td>'+cells+'<td class="num"><b>'+(avg===null?'—':avg)+'</b></td></tr>';
+  });
+  $('timesMonths').innerHTML='<table>'+mh+'<tbody>'+mb+'</tbody></table>';
+
+  // 3) تفصيلي — كل عمليات الوقف في الفترة
+  var dh='<thead><tr><th>التاريخ</th><th>الفرع</th><th>الايتم</th><th class="num">وقف</th><th class="num">رجع</th><th class="num">مدة الوقف</th><th class="num">تحضير (د)</th><th class="num">توصيل (د)</th><th class="num">تحضير + توصيل (د)</th></tr></thead>';
+  var list=rows.slice().sort(function(a,c){ return a.d===c.d ? (c.stv||0)-(a.stv||0) : (a.d<c.d?1:-1); });
+  var db='';
+  list.forEach(function(r){
+    var t=timesAt(r.b, r.d);
+    db+='<tr><td class="num">'+esc(r.d)+'</td><td>'+esc(r.b)+'</td><td class="nm">'+esc(r.it)+'</td>'
+      +'<td class="num">'+esc(fmtTime(r.st))+'</td><td class="num">'+(r.en?esc(fmtTime(r.en)):'—')+'</td>'
+      +'<td class="num">'+esc(durStr(r))+'</td>'
+      +'<td class="num">'+(t?t.prep:'—')+'</td><td class="num">'+(t?t.del:'—')+'</td><td class="num"><b>'+(t?t.total:'—')+'</b></td></tr>';
+  });
+  $('timesDetail').innerHTML='<table>'+dh+'<tbody>'+(db||'<tr><td colspan="9" class="empty">مفيش عمليات وقف في الفترة المختارة.</td></tr>')+'</tbody></table>';
+}
+
+/* ---------- تحويل جداول تقرير الأوقات إلى صفوف Excel ---------- */
+function timesSummarySheetRows(rows){
+  var out=[['الفرع','يفتح','يقفل','تحضير (د)','توصيل (د)','تحضير + توصيل (د)','مرات الوقف','مدة الوقف','آخر تحديث','عدّله']];
+  var byBranch=rowsByBranch(rows);
+  shownBranches().forEach(function(br){
+    var t=timesCurrent(br.key), s=summarize(byBranch[br.key]||[]);
+    out.push([br.name,clock12(br.openSec),clock12(br.closeSec),
+      t?t.prep:'',t?t.del:'',t?t.total:'',s.stops,fmtDurH(s.hours),
+      (t&&t.at?t.at+(t.by?' — '+t.by:''):''),'']);
+  });
+  return out;
+}
+function timesMonthsSheetRows(){
+  var shown=shownBranches();
+  var out=[['الشهر'].concat(shown.map(function(br){ return br.name; })).concat(['متوسط الفروع'])];
+  var mset={};
+  ((D&&D.all)||[]).forEach(function(r){ if(r.d) mset[r.d.slice(0,7)]=1; });
+  ((D&&D.times)||[]).forEach(function(t){ if(t.at) mset[t.at.slice(0,7)]=1; });
+  var months=Object.keys(mset).sort().reverse();
+  if(!months.length) months=[D.now.slice(0,7)];
+  months.forEach(function(m){
+    var vals=[], cells=[];
+    shown.forEach(function(br){
+      var t=timesAt(br.key, m+'-31');
+      if(t){ vals.push(t.total); cells.push(t.total); }
+      else cells.push('');
+    });
+    var avg=vals.length?Math.round(vals.reduce(function(a,c){return a+c;},0)/vals.length):'';
+    out.push([m].concat(cells).concat([avg]));
+  });
+  return out;
+}
+function timesDetailSheetRows(rows){
+  var out=[['التاريخ','الفرع','الايتم','وقف','رجع','مدة الوقف','تحضير (د)','توصيل (د)','تحضير + توصيل (د)']];
+  var list=rows.slice().sort(function(a,c){ return a.d===c.d ? (c.stv||0)-(a.stv||0) : (a.d<c.d?1:-1); });
+  list.forEach(function(r){
+    var t=timesAt(r.bkey, r.d);
+    out.push([r.d,r.b,r.it,fmtTime(r.st),r.en?fmtTime(r.en):'',durStr(r),
+      t?t.prep:'',t?t.del:'',t?t.total:'']);
+  });
+  return out;
+}
+
+/* =====================================================
+   واجهة الايجينت (قراءة فقط: الايتمات اللي وقفت واشتغلت — من غير ساعات أو أسباب)
+   ===================================================== */
+function renderAgentView(){
+  var sn=$('shiftNote');
+  if(sn){
+    var seen={}, shifts=[];
+    D.branches.forEach(function(b){ var t=shiftText(b); if(!seen[t]){ seen[t]=1; shifts.push(t); } });
+    sn.innerHTML='🕒 شيفت الفرع: <b>'+esc(shifts.slice(0,3).join(' | ')||'—')+'</b>'+(shifts.length>3?' +'+(shifts.length-3):'');
+  }
+  var today=D.now, yesterday=addDays(today,-1);
+  var sel=$('aBranch'), names=D.branches.map(function(b){ return b.key||b.name; }), sig=names.join('|');
+  if(sel.getAttribute('data-sig')!==sig){
+    sel.innerHTML='<option value="all">كل الفروع</option>'+D.branches.map(function(b){
+      return '<option value="'+esc(b.key||b.name)+'">'+esc(b.name)+'</option>';
+    }).join('');
+    sel.setAttribute('data-sig',sig);
+    if(names.indexOf(A.branch)<0) A.branch='all';
+    sel.value=A.branch;
+  }
+  sel.parentNode.hidden=(names.length<2);
+  var q=A.q.trim().toLowerCase(), html='';
+  var dayLbl=function(r){ return (r.d===today||r.d===yesterday) ? '' : r.d.slice(5)+' '; };
+  D.branches.forEach(function(b){
+    if(A.branch!=='all' && (b.key||b.name)!==A.branch) return;
+    var rows=b.rows.filter(function(r){ return !q || r.it.toLowerCase().indexOf(q)>=0; });
+    var open=rows.filter(function(r){ return r.o; }).sort(byTimeDesc);
+    var done=rows.filter(function(r){ return !r.o; }).sort(byTimeDesc);
+    var oHtml=open.length ? '<ul class="ag-list">'+open.map(function(r){
+      return '<li><b>'+esc(r.it)+'</b><span class="t">وقف '+dayLbl(r)+esc(fmtTime(r.st))+'</span></li>'; }).join('')+'</ul>'
+      : '<div class="empty">مفيش ايتمات موقوفة. 👍</div>';
+    var dHtml=done.length ? '<ul class="ag-list">'+done.map(function(r){
+      return '<li><b>'+esc(r.it)+'</b><span class="t">'+dayLbl(r)+'من '+esc(fmtTime(r.st))+' إلى '+esc(fmtTime(r.en))+'</span></li>'; }).join('')+'</ul>'
+      : '<div class="empty">لسه مفيش ايتمات اشتغلت.</div>';
+    html+='<div class="panel" style="margin-bottom:16px"><h3 class="branch-h">'+esc(b.name)+' '+hoursPill(b)+' '+timesPills(timesCurrent(b.key))+'</h3><div class="agent-cols">'
+      +'<div><h4>موقوف حاليا <span class="pill danger">'+open.length+'</span></h4>'+oHtml+'</div>'
+      +'<div><h4>اشتغل (شيفت الفرع) <span class="pill ok">'+done.length+'</span></h4>'+dHtml+'</div></div></div>';
+  });
+  $('agentList').innerHTML=html || '<div class="panel empty">مفيش فروع متاحة لليوزر ده.</div>';
+}
+
+/* =====================================================
+   التقارير: مقارنة الشهور + تصدير Excel شامل (.xlsx)
+   ===================================================== */
+
+/* كل الشهور اللي فيها داتا أو تعديل أوقات (الأحدث الأول) */
+function monthList(){
+  var set={};
+  ((D&&D.all)||[]).forEach(function(r){ if(r.d) set[r.d.slice(0,7)]=1; });
+  ((D&&D.times)||[]).forEach(function(t){ if(t.at) set[t.at.slice(0,7)]=1; });
+  var m=Object.keys(set).sort().reverse();
+  return m.length?m:[(D&&D.now?D.now.slice(0,7):'')];
+}
+
+/* إحصائيات كل شهر (كل البيانات — مش متأثرة بفلتر الفترة) */
+function monthlyStats(){
+  var months=monthList(), by={};
+  months.forEach(function(m){ by[m]={month:m,stops:0,h:0,items:{},reasons:{}}; });
+  ((D&&D.all)||[]).forEach(function(r){
+    var m=(r.d||'').slice(0,7); if(!m) return;
+    if(!by[m]){ by[m]={month:m,stops:0,h:0,items:{},reasons:{}}; months.push(m); }
+    var o=by[m];
+    o.stops++; o.h+=(+r.h||0);
+    o.items[r.it]=(o.items[r.it]||0)+1;
+    o.reasons[r.r]=(o.reasons[r.r]||0)+1;
+  });
+  return months.slice().sort().reverse().map(function(m){
+    var o=by[m];
+    o.avg=o.stops?o.h/o.stops:0;
+    o.itemList=Object.keys(o.items).map(function(k){ return {k:k,n:o.items[k]}; }).sort(function(a,b){ return b.n-a.n; });
+    o.reasonList=Object.keys(o.reasons).map(function(k){ return {k:k,n:o.reasons[k]}; }).sort(function(a,b){ return b.n-a.n; });
+    return o;
+  });
+}
+
+/* الشهور × الفروع: مرات/مدة الوقف + متوسط التحضير والتوصيل */
+function monthlyBranchStats(){
+  var out=[], byBM={};
+  ((D&&D.all)||[]).forEach(function(r){
+    var m=(r.d||'').slice(0,7); if(!m) return;
+    var k=r.bkey+'|'+m;
+    (byBM[k]||(byBM[k]=[])).push(r);
+  });
+  monthList().forEach(function(m){
+    brandBranches().forEach(function(b){
+      var rs=byBM[b.key+'|'+m]||[];
+      if(!rs.length){
+        var t0=timesAt(b.key, m+'-31');
+        if(t0) out.push({m:m,b:b.name,n:0,h:0,prep:t0.prep,del:t0.del,total:t0.total});
+        return;
+      }
+      var h=0, sp=0, sd=0, np=0, nd=0;
+      rs.forEach(function(r){
+        h+=(+r.h||0);
+        var t=timesAt(b.key, r.d);
+        if(t){ sp+=t.prep; sd+=t.del; np++; nd++; }
+      });
+      var prep=np?Math.round(sp/np):null, del=nd?Math.round(sd/nd):null;
+      out.push({m:m,b:b.name,n:rs.length,h:h,prep:prep,del:del,total:(prep!=null&&del!=null)?prep+del:null});
+    });
+  });
+  return out;
+}
+
+/* أسماء الايتمات الأكثر وقفًا في كل البيانات */
+function topItemNames(n){
+  var m={};
+  ((D&&D.all)||[]).forEach(function(r){ m[r.it]=(m[r.it]||0)+1; });
+  return Object.keys(m).sort(function(a,b){ return m[b]-m[a]; }).slice(0,n||8);
+}
+
+function num2(v){ return Math.round((+v||0)*100)/100; }
+
+/* ---------- تجهيز صفوف كل شيت ---------- */
+function monthsSheetRows(){
+  var out=[['الشهر','مرات الوقف','إجمالي مدة الوقف','المدة (ثانية)','متوسط الوقف','عدد الايتمات','أكتر ايتم وقفًا','مرات الأكتر','أكتر سبب','مرات الأكتر']];
+  monthlyStats().forEach(function(o){
+    out.push([o.month,o.stops,fmtDurH(o.h),Math.round(o.h*3600),fmtDurH(o.avg),
+      Object.keys(o.items).length,
+      o.itemList.length?o.itemList[0].k:'—',o.itemList.length?o.itemList[0].n:0,
+      o.reasonList.length?o.reasonList[0].k:'—',o.reasonList.length?o.reasonList[0].n:0]);
+  });
+  return out;
+}
+function branchMonthsSheetRows(){
+  var out=[['الشهر','الفرع','مرات الوقف','مدة الوقف','المدة (ثانية)','متوسط التحضير (د)','متوسط التوصيل (د)','تحضير + توصيل (د)']];
+  monthlyBranchStats().forEach(function(o){
+    out.push([o.m,o.b,o.n,fmtDurH(o.h),Math.round(o.h*3600),
+      o.prep==null?'—':o.prep, o.del==null?'—':o.del, o.total==null?'—':o.total]);
+  });
+  return out;
+}
+function topItemsSheetRows(){
+  var tops=topItemNames(8);
+  var out=[['الشهر'].concat(tops).concat(['الإجمالي'])];
+  monthlyStats().forEach(function(o){
+    var row=[o.month].concat(tops.map(function(it){ return o.items[it]||0; }));
+    row.push(o.stops); out.push(row);
+  });
+  return out;
+}
+function logSheetRows(rows){
+  var out=[['التاريخ','الفرع','الايتم','وقت الوقف','وقت الرجوع','المدة','المدة (ثانية)','السبب','ملاحظة','الحالة']];
+  rows.slice().sort(function(a,c){ return a.d===c.d ? ((+c.stv||0)-(+a.stv||0)) : (a.d<c.d?1:-1); }).forEach(function(r){
+    out.push([r.d,r.b,r.it,fmtTime(r.st),r.en?fmtTime(r.en):'',
+      durStr(r),Math.round((+r.h||0)*3600),r.r||'',r.n||'',r.o?'موقوف حاليا':'اشتغل']);
+  });
+  return out;
+}
+function summarySheetRows(rows){
+  var out=[['الفرع','يفتح','يقفل','مرات الوقف','مدة الوقف','المدة (ثانية)','ايتمات مختلفة','متوسط الوقف','موقوف حاليا']];
+  var list=shownBranches(), totals={stops:0,h:0,items:0,open:0};
+  list.forEach(function(b){
+    var s=summarize(rows.filter(function(r){ return r.bkey===b.key; }));
+    var op=openCount(b.key);
+    totals.stops+=s.stops; totals.h+=s.hours; totals.items+=s.items; totals.open+=op;
+    out.push([b.name,clock12(b.openSec),clock12(b.closeSec),s.stops,fmtDurH(s.hours),Math.round(s.hours*3600),s.items,fmtDurH(s.avg),op]);
+  });
+  var sAll=summarize(rows);
+  out.push(['الإجمالي','','',sAll.stops,fmtDurH(sAll.hours),Math.round(sAll.hours*3600),sAll.items,fmtDurH(sAll.avg),openCount(null)]);
+  return out;
+}
+function reasonsSheetRows(rows){
+  var branches=shownBranches();
+  var names=branches.map(function(b){ return b.restaurantName?b.restaurantName+' — '+b.name:b.name; });
+  var map={};
+  rows.forEach(function(r){
+    var o=map[r.r||'—']||(map[r.r||'—']={n:0,h:0,by:{}});
+    o.n++; o.h+=(+r.h||0);
+    o.by[r.bkey]=(o.by[r.bkey]||0)+1;
+  });
+  var keys=Object.keys(map).sort(function(a,b){ return map[b].n-map[a].n; });
+  var out=[['السبب'].concat(names).concat(['الإجمالي','مدة الوقف'])];
+  keys.forEach(function(k){
+    out.push([k].concat(branches.map(function(b){ return map[k].by[b.key]||0; })).concat([map[k].n,fmtDurH(map[k].h)]));
+  });
+  return out;
+}
+function dailySheetRows(rows){
+  var map={};
+  rows.forEach(function(r){
+    var o=map[r.d]||(map[r.d]={n:0,h:0,items:{}});
+    o.n++; o.h+=(+r.h||0); o.items[r.it]=1;
+  });
+  var out=[['التاريخ','مرات الوقف','مدة الوقف','المدة (ثانية)','عدد الايتمات']];
+  Object.keys(map).sort().reverse().forEach(function(d){
+    out.push([d,map[d].n,fmtDurH(map[d].h),Math.round(map[d].h*3600),Object.keys(map[d].items).length]);
+  });
+  return out;
+}
+function timesSheetRows(){
+  var out=[['الفرع','يفتح','يقفل','تحضير (د)','توصيل (د)','تحضير + توصيل (د)','آخر تحديث','عدّله']];
+  brandBranches().forEach(function(b){
+    var t=timesCurrent(b.key);
+    out.push([b.name,clock12(b.openSec),clock12(b.closeSec),
+      t?t.prep:'',t?t.del:'',t?t.total:'',t?t.at:'',t?t.by:'']);
+  });
+  return out;
+}
+function timesChangesSheetRows(){
+  var out=[['الفرع','تحضير (د)','توصيل (د)','الإجمالي (د)','عدّله','التاريخ']];
+  var list=((D&&D.times)||[]).slice().sort(function(a,b){
+    if((b.at||'')!==(a.at||'')) return (b.at||'')<(a.at||'')?-1:1;
+    return String(a.b).localeCompare(String(b.b),'ar');
+  });
+  list.forEach(function(t){
+    out.push([t.b,+t.prep,+t.del,(+t.prep)+(+t.del),t.by||'',t.at||'']);
+  });
+  return out;
+}
+function branchesSheetRows(rows){
+  var out=[['الفرع','يفتح','يقفل','مدة الشيفت (ساعة)','تحضير (د)','توصيل (د)','تحضير + توصيل (د)','مرات الوقف','مدة الوقف']];
+  var byBranch=rowsByBranch(rows);
+  brandBranches().forEach(function(b){
+    var t=timesCurrent(b.key), s=summarize(byBranch[b.key]||[]);
+    var span=((+b.closeSec||0)-(+b.openSec||0)+86400)%86400;
+    out.push([b.name,clock12(b.openSec),clock12(b.closeSec),num2(span/3600),
+      t?t.prep:'',t?t.del:'',t?t.total:'',s.stops,fmtDurH(s.hours)]);
+  });
+  return out;
+}
+
+/* ---------- عرض التقارير في الشاشة ---------- */
+function rowsTable(arr){
+  if(!arr||!arr.length) return '<div class="empty">مفيش بيانات.</div>';
+  var head=arr[0], body=arr.slice(1);
+  return '<table><thead><tr>'+head.map(function(c,i){ return '<th'+(i?' class="num"':'')+'>'+esc(c)+'</th>'; }).join('')+'</tr></thead><tbody>'
+    + (body.length ? body.map(function(r){
+        return '<tr>'+r.map(function(c,i){ return '<td'+(i?' class="num"':'')+'>'+esc(c)+'</td>'; }).join('')+'</tr>';
+      }).join('') : '<tr><td colspan="'+head.length+'" class="empty">مفيش بيانات.</td></tr>')
+    + '</tbody></table>';
+}
+
+function renderReports(rows){
+  var ms=monthlyStats(), tot=summarize(rows);
+  var kp=[
+    ['مرات الوقف (الفترة)', tot.stops],
+    ['مدة الوقف (الفترة)', fmtDurH(tot.hours)],
+    ['عدد الشهور', ms.length],
+    ['عدد الفروع', brandBranches().length]
+  ];
+  $('repKpis').innerHTML=kp.map(function(k){
+    return '<div class="rep-kpi"><span>'+esc(k[0])+'</span><b>'+esc(k[1])+'</b></div>';
+  }).join('');
+
+  $('repMonths').innerHTML=rowsTable(monthsSheetRows());
+  $('repBranchMonths').innerHTML=rowsTable(branchMonthsSheetRows());
+  $('repTopItems').innerHTML=rowsTable(topItemsSheetRows());
+
+  var asc=ms.slice().reverse();
+  mkChart('chMonths',{
+    type:'bar',
+    data:{ labels:asc.map(function(o){ return o.month; }),
+      datasets:[{ label:'مدة الوقف', data:asc.map(function(o){ return Math.round(o.h*10)/10; }),
+        backgroundColor:'#2563EB', borderRadius:3 }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{ label:function(c){ return 'مدة الوقف: '+fmtDurH(c.parsed.y); }}} },
+      scales:{ y:{ beginAtZero:true, ticks:{ callback:function(v){ return fmtDurH(v); } } } } }
+  });
+}
+
+/* ---------- كاتب Excel (.xlsx) بدون أي مكتبة خارجية ---------- */
+var CRC_T=null;
+function crcTable_(){
+  if(CRC_T) return CRC_T;
+  CRC_T=new Uint32Array(256);
+  for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); CRC_T[n]=c>>>0; }
+  return CRC_T;
+}
+function crc32_(buf){ var t=crcTable_(), c=0xFFFFFFFF; for(var i=0;i<buf.length;i++) c=t[(c^buf[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore_(files){
+  var enc=new TextEncoder(), parts=[], central=[], offset=0;
+  function u16(n){ return [n&255,(n>>>8)&255]; }
+  function u32(n){ return [n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255]; }
+  var DOS_DATE=20513;   // 2020-01-01
+  files.forEach(function(f){
+    var name=enc.encode(f.name), data=f.data, crc=crc32_(data);
+    var hdr=new Uint8Array([].concat([0x50,0x4b,0x03,0x04],u16(20),u16(0),u16(0),u16(0),u16(DOS_DATE),
+      u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0)));
+    parts.push(hdr,name,data);
+    central.push({name:name,crc:crc,size:data.length,off:offset});
+    offset+=hdr.length+name.length+data.length;
+  });
+  var cd=[], cdStart=offset, cdLen=0;
+  central.forEach(function(f){
+    var hdr=new Uint8Array([].concat([0x50,0x4b,0x01,0x02],u16(20),u16(20),u16(0),u16(0),u16(0),u16(DOS_DATE),
+      u32(f.crc),u32(f.size),u32(f.size),u16(f.name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(f.off)));
+    cd.push(hdr,f.name); cdLen+=hdr.length+f.name.length;
+  });
+  var end=new Uint8Array([].concat([0x50,0x4b,0x05,0x06],u16(0),u16(0),u16(central.length),u16(central.length),
+    u32(cdLen),u32(cdStart),u16(0)));
+  return new Blob(parts.concat(cd,[end]),{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function xmlEsc_(s){
+  return String(s==null?'':s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'')
+    .replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]; });
+}
+function colLetter_(n){ var s=''; n++; while(n>0){ var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+function sheetName_(s){
+  var n=String(s||'Sheet').replace(/[\[\]\*\?\/\\:]/g,' ').replace(/\s+/g,' ').trim().slice(0,31);
+  return n||'Sheet';
+}
+function xlsxSheetXml_(rows){
+  var maxc=0;
+  rows.forEach(function(r){ if(r.length>maxc) maxc=r.length; });
+  var widths=[];
+  for(var c=0;c<maxc;c++){
+    var w=8;
+    rows.slice(0,120).forEach(function(r){ var v=r[c]; if(v==null) return; var len=String(v).length; if(len>w) w=len; });
+    widths.push(Math.min(45,Math.max(10,w+2)));
+  }
+  var cols='';
+  for(var c2=0;c2<widths.length;c2++) cols+='<col min="'+(c2+1)+'" max="'+(c2+1)+'" width="'+widths[c2]+'" customWidth="1"/>';
+  var out='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    +'<sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+    +(cols?'<cols>'+cols+'</cols>':'')
+    +'<sheetData>';
+  rows.forEach(function(r,ri){
+    out+='<row r="'+(ri+1)+'">';
+    for(var ci=0;ci<r.length;ci++){
+      var v=r[ci];
+      if(v===null||v===undefined||v==='') continue;
+      var ref=colLetter_(ci)+(ri+1), st=ri===0?' s="1"':'';
+      if(typeof v==='number'&&isFinite(v)) out+='<c r="'+ref+'"'+st+'><v>'+v+'</v></c>';
+      else out+='<c r="'+ref+'"'+st+' t="inlineStr"><is><t xml:space="preserve">'+xmlEsc_(v)+'</t></is></c>';
+    }
+    out+='</row>';
+  });
+  return out+'</sheetData></worksheet>';
+}
+function buildXlsxBlob_(sheets){
+  var enc=new TextEncoder(), files=[], names=[], used={};
+  sheets.forEach(function(s){
+    var base=sheetName_(s.name), nm=base, k=2;
+    while(used[nm.toLowerCase()]){ nm=(base.slice(0,28)+' '+(k++)).slice(0,31); }
+    used[nm.toLowerCase()]=1; names.push(nm);
+  });
+  var ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    +'<Default Extension="xml" ContentType="application/xml"/>'
+    +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+  sheets.forEach(function(s,i){ ct+='<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; });
+  ct+='</Types>';
+  files.push({name:'[Content_Types].xml', data:enc.encode(ct)});
+  files.push({name:'_rels/.rels', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
+
+  var wbSheets='';
+  names.forEach(function(n,i){ wbSheets+='<sheet name="'+xmlEsc_(n)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>'; });
+  files.push({name:'xl/workbook.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+    +'<sheets>'+wbSheets+'</sheets></workbook>')});
+
+  var rels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+  names.forEach(function(n,i){ rels+='<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>'; });
+  rels+='<Relationship Id="rId'+(names.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+  files.push({name:'xl/_rels/workbook.xml.rels', data:enc.encode(rels)});
+
+  files.push({name:'xl/styles.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    +'<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    +'<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
+    +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+    +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    +'<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    +'<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
+    +'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')});
+
+  sheets.forEach(function(s,i){
+    files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml', data:enc.encode(xlsxSheetXml_(s.rows||[]))});
+  });
+  return zipStore_(files);
+}
+function downloadXlsx(name, sheets){
+  try{
+    var blob=buildXlsxBlob_(sheets);
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500);
+    toast('تم تنزيل الملف: '+name,'ok');
+    return blob;
+  }catch(e){ showError(e,'فشل تصدير Excel'); return null; }
+}
+function exportXlsx(kind){
+  if(!D){ toast('لا توجد بيانات متاحة للتصدير حاليًا.','warn'); return; }
+  var rows=filtered(), stamp=D.now, sheets=[], label='تقرير';
+  if(kind==='all'){
+    label='شامل';
+    sheets=[
+      {name:'الملخص', rows:summarySheetRows(rows)},
+      {name:'السجل', rows:logSheetRows(rows)},
+      {name:'الأسباب', rows:reasonsSheetRows(rows)},
+      {name:'مقارنة الشهور', rows:monthsSheetRows()},
+      {name:'الشهور × الفروع', rows:branchMonthsSheetRows()},
+      {name:'الأيتمات الأكثر', rows:topItemsSheetRows()},
+      {name:'الأداء اليومي', rows:dailySheetRows(rows)},
+      {name:'أوقات التحضير', rows:timesSheetRows()},
+      {name:'ملخص أوقات الفروع', rows:timesSummarySheetRows(rows)},
+      {name:'مقارنة شهور الأوقات', rows:timesMonthsSheetRows()},
+      {name:'تفصيلي الأوقات', rows:timesDetailSheetRows(rows)},
+      {name:'تغييرات الأوقات', rows:timesChangesSheetRows()},
+      {name:'الفروع', rows:branchesSheetRows(rows)}
+    ];
+  }else if(kind==='months'){ label='مقارنة-الشهور'; sheets=[{name:'مقارنة الشهور', rows:monthsSheetRows()}]; }
+  else if(kind==='branches'){ label='الشهور-والفروع'; sheets=[{name:'الشهور × الفروع', rows:branchMonthsSheetRows()}]; }
+  else if(kind==='topItems'){ label='الأيتمات-الأكثر'; sheets=[{name:'الأيتمات الأكثر', rows:topItemsSheetRows()}]; }
+  else if(kind==='log'){ label='سجل-الوقف'; sheets=[{name:'السجل', rows:logSheetRows(rows)},{name:'الملخص', rows:summarySheetRows(rows)}]; }
+  else if(kind==='times'){ label='أوقات-التحضير-والتوصيل'; sheets=[{name:'الأوقات الحالية', rows:timesSheetRows()},{name:'ملخص الفروع', rows:timesSummarySheetRows(rows)},{name:'مقارنة الشهور', rows:timesMonthsSheetRows()},{name:'تغييرات الأوقات', rows:timesChangesSheetRows()}]; }
+  else if(kind==='timesChanges'){ label='تغييرات-الأوقات'; sheets=[{name:'تغييرات الأوقات', rows:timesChangesSheetRows()}]; }
+  else if(kind==='timesSum'){ label='ملخص-أوقات-الفروع'; sheets=[{name:'ملخص الفروع', rows:timesSummarySheetRows(rows)}]; }
+  else if(kind==='timesMonths'){ label='مقارنة-شهور-الأوقات'; sheets=[{name:'مقارنة الشهور', rows:timesMonthsSheetRows()}]; }
+  else if(kind==='timesDetail'){ label='تقرير-تفصيلي-الأوقات'; sheets=[{name:'تفصيلي', rows:timesDetailSheetRows(rows)}]; }
+  else { label='شامل'; sheets=[{name:'الملخص', rows:summarySheetRows(rows)},{name:'السجل', rows:logSheetRows(rows)}]; }
+  downloadXlsx(label+'-'+stamp+'.xlsx', sheets);
+}
+
+/* =====================================================
+   v13: إدارة المطاعم/المنيو/المواعيد
+   ===================================================== */
+var DAY_NAMES=['الأحد','الاتنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+
+/* ---------- بيانات المنيو للفروع ---------- */
+function menuForBranch(b){
+  var m=(D&&D.menu)||LIVE.menu||{};
+  if(m[b.key]) return m[b.key];
+  if(m[b.name]) return m[b.name];
+  return [];
+}
+function renderAgentAvail(){
+  var el=$('agentAvail'); if(!el||!D) return;
+  var bs=D.branches.filter(function(b){ return A.branch==='all'||(b.key||b.name)===A.branch; });
+  var html='';
+  bs.forEach(function(b){
+    var stopped={}, items=menuForBranch(b);
+    (b.rows||[]).forEach(function(r){ if(r.o) stopped[r.it]=1; });
+    var off=items.filter(function(it){ return !it.av || stopped[it.it]; });
+    if(!off.length) return;
+    html+='<div class="av-branch-head" style="color:'+color(b.name)+'"><span>●</span> '+esc(b.name)+'</div><div class="avail-grid">'
+      +off.slice(0,60).map(function(it){
+        return '<div class="av-item '+(stopped[it.it]?'stopped':'off')+'" style="cursor:default"><div class="av-top"><b>'+esc(it.it)+'</b><span class="pill '+(stopped[it.it]?'soft':'danger')+'">'+(stopped[it.it]?'موقوف حالياً':'غير متاح')+'</span></div></div>';
+      }).join('')+'</div>';
+  });
+  el.innerHTML=html||'<div class="panel empty">كل الأصناف متاحة 👍</div>';
+}
+
+/* ---------- إدارة المطاعم ---------- */
+function actRestaurants(){
+  if(!needAdmin()) return;
+  loading(true);
+  api('listRestaurants',[],function(res){
+    loading(false);
+    var list=(res&&res.restaurants)||[], branches=(res&&res.branches)||[];
+    var rows=list.map(function(r){
+      var n=branches.filter(function(b){return b.restaurant===r.id;}).length;
+      return '<tr><td class="it" dir="ltr">'+esc(r.id)+'</td><td>'+esc(r.name)+'</td>'
+        +'<td>'+(r.active?'<span class="pill ok">نشط</span>':'<span class="pill gray">موقوف</span>')+'</td>'
+        +'<td class="num">'+n+'</td>'
+        +'<td><button type="button" class="btn ghost sm" data-rdel="'+esc(r.id)+'">حذف</button></td></tr>';
+    }).join('');
+    openModal('إدارة المطاعم',
+      '<div class="tbl-wrap"><table style="min-width:520px"><tr><th>الكود</th><th>الاسم</th><th>الحالة</th><th class="num">الفروع</th><th></th></tr>'
+      +(rows||'<tr><td colspan="5" class="empty">مفيش مطاعم مسجلة.</td></tr>')+'</table></div>'
+      +'<h3 style="margin:18px 0 0;font-size:15px">إضافة / تعديل مطعم</h3>'
+      +'<label for="rsId">كود المطعم (إنجليزي/أرقام — سيبه فاضي للتوليد)</label><input id="rsId" type="text" dir="ltr" autocomplete="off">'
+      +'<label for="rsName">اسم المطعم</label><input id="rsName" type="text">'
+      +'<div class="chkrow"><input id="rsActive" type="checkbox" checked><label for="rsActive" style="margin:0">نشط</label></div>'
+      +'<p class="hint">كل مطعم ليه فروعه ومنيوه ومستخدميه بعزل كامل. لو كتبت كود موجود هيتم تعديل نفس المطعم.</p>',
+      'حفظ المطعم',
+      function(){
+        var info={id:$('rsId').value.trim(),name:$('rsName').value.trim(),active:$('rsActive').checked};
+        if(!info.name){ toast('اكتب اسم المطعم','warn'); return; }
+        var btn=$('mSubmit'); btn.disabled=true;
+        api('saveRestaurant',[info],function(r){ btn.disabled=false; toast('تم حفظ المطعم','ok'); closeModal(); load(true,true); },
+          function(e){ btn.disabled=false; toastErr(e); });
+      });
+    document.querySelector('#modal .dlg').classList.add('wide');
+    if(list.length) $('mBody').insertAdjacentHTML('afterbegin','<datalist id="rsDl">'+list.map(function(r){return '<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>';}).join('')+'</datalist>');
+    $('rsId').setAttribute('list','rsDl');
+    document.querySelectorAll('[data-rdel]').forEach(function(b){
+      b.addEventListener('click',function(){ actDeleteRestaurant(b.getAttribute('data-rdel')); });
+    });
+  },function(e){ loading(false); toastErr(e); });
+}
+function actDeleteRestaurant(id){
+  if(!needAdmin()) return;
+  openModal('حذف المطعم '+id,
+    '<div class="warn-note">لازم المطعم ميكونش فيه فروع. الحذف بيشيل منيو وأسباب ومواعيد المطعم نهائيًا.</div>'
+    +'<label for="rdId">اكتب كود المطعم للتأكيد</label><input id="rdId" type="text" dir="ltr" autocomplete="off">'
+    +'<label for="rdPass">كلمة سر الأدمن</label><input id="rdPass" type="password" autocomplete="current-password">',
+    'حذف المطعم', function(){
+      var btn=$('mSubmit'); btn.disabled=true; btn.classList.add('warn');
+      api('deleteRestaurant',[{id:id,confirm:$('rdId').value.trim(),password:$('rdPass').value}],
+        function(){ btn.disabled=false; toast('تم حذف المطعم','ok'); closeModal(); load(true,true); },
+        function(e){ btn.disabled=false; toastErr(e); });
+    });
+}
+
+/* ---------- إدارة المنيو ---------- */
+function actMenu(){
+  var restaurants=(D.restaurants||[]).filter(function(r){return r.active!==false;});
+  if(!restaurants.length){ toast('لا توجد مطاعم نشطة لإدارة المنيو.','warn'); return; }
+  var rest=restaurants.some(function(r){return r.id===S.rest;})?S.rest:restaurants[0].id;
+  var branches=D.branches.filter(function(b){return b.restaurant===rest;});
+  var branch=branches.some(function(b){return (b.key||b.name)===S.branch;})?S.branch:(branches[0]?(branches[0].key||branches[0].name):'');
+  if(!branch){ toast('لا توجد فروع مسجلة لهذا المطعم.','warn'); return; }
+  var currentItems=[];
+  function drawItems(items){
+    currentItems=items||[];
+    $('menuItems').innerHTML=currentItems.length?currentItems.map(function(it){
+      return '<div class="menu-row"><span class="mi">'+esc(it.it)+'</span>'
+        +(it.cat?'<span class="mp">'+esc(it.cat)+'</span>':'')
+        +(it.price!=null&&it.price!==''?'<span class="mp num">'+esc(it.price)+'</span>':'')
+        +'<span class="pill '+(it.av?'ok':'gray')+'">'+(it.av?'متاح':'غير متاح')+'</span>'
+        +'<button type="button" class="btn ghost sm" data-menu-avail="'+esc(it.it)+'">'+(it.av?'إيقاف':'تفعيل')+'</button>'
+        +'<button type="button" class="btn ghost sm" data-menu-edit="'+esc(it.it)+'">تعديل</button>'
+        +(isAdminUser()?'<button type="button" class="btn ghost sm" data-menu-del="'+esc(it.it)+'">حذف حسب النطاق</button>':'')+'</div>';
+    }).join(''):'<div class="empty">لا توجد أصناف لهذا الفرع.</div>';
+  }
+  function fetchMenu(){
+    rest=$('mnRest').value; branch=$('mnBranch').value;
+    $('menuItems').innerHTML='<div class="empty">جاري تحميل المنيو...</div>';
+    if(!branch){ drawItems([]); return; }
+    api('listMenu',[rest,branch],function(res){
+      drawItems((res.byBranch&&res.byBranch[branch])||res.items||[]);
+    },function(e){ $('menuItems').innerHTML='<div class="empty">'+esc(errMsg(e))+'</div>'; });
+  }
+  loading(true);
+  api('listMenu',[rest,branch],function(res){
+    loading(false);
+    var branchesNow=D.branches.filter(function(b){return b.restaurant===rest;});
+    branch=branchesNow.some(function(b){return (b.key||b.name)===branch;})?branch:(branchesNow[0]?(branchesNow[0].key||branchesNow[0].name):'');
+    openModal('إدارة المنيو والتوفر',
+      '<label for="mnRest">المطعم</label><select id="mnRest">'+restaurants.map(function(r){
+        return '<option value="'+esc(r.id)+'"'+(r.id===rest?' selected':'')+'>'+esc(r.name)+'</option>';
+      }).join('')+'</select>'
+      +'<label for="mnBranch">الفرع</label><select id="mnBranch">'+branchOptionsHTML(rest,branch)+'</select>'
+      +'<label for="mnScope">نطاق التعديل</label><select id="mnScope"><option value="branch">الفرع المحدد فقط</option><option value="all">كل فروع المطعم</option></select>'
+      +'<div class="cfg-note">اختر نطاقًا لكل عملية: تعديل أو توافر أو حذف الصنف في الفرع الحالي فقط، أو تعميمها على جميع فروع المطعم.</div>'
+      +'<div id="menuItems" style="max-height:250px;overflow:auto;border:1px solid var(--line-soft);border-radius:8px;padding:0 10px"></div>'
+      +'<h3 style="margin:18px 0 0;font-size:15px">إضافة / تعديل صنف لهذا الفرع</h3>'
+      +'<label for="mnItem">اسم الصنف</label><input id="mnItem" type="text" autocomplete="off">'
+      +'<label for="mnCat">التصنيف (اختياري)</label><input id="mnCat" type="text">'
+      +'<label for="mnPrice">السعر (اختياري)</label><input id="mnPrice" type="number" min="0" step="0.01" dir="ltr">'
+      +'<div class="chkrow"><input id="mnAvail" type="checkbox" checked><label for="mnAvail" style="margin:0">متاح</label></div>',
+      'حفظ الصنف', function(){
+        var info={item:$('mnItem').value.trim(),category:$('mnCat').value.trim(),price:$('mnPrice').value,
+          branch:$('mnScope').value==='all'?'':$('mnBranch').value,scope:$('mnScope').value,
+          available:$('mnAvail').checked,restaurant:$('mnRest').value};
+        if(!$('mnBranch').value){ toast('اختار المطعم والفرع أولاً','warn'); return; }
+        if(!info.item){ toast('اكتب اسم الصنف','warn'); return; }
+        var btn=$('mSubmit'); btn.disabled=true;
+        api('saveMenuItem',[info],function(r){ btn.disabled=false; toast(info.scope==='all'?'تم حفظ الصنف لكل فروع المطعم':'تم حفظ الصنف في الفرع المحدد','ok'); closeModal(); applyFresh(r); },
+          function(e){ btn.disabled=false; toastErr(e); });
+      });
+    document.querySelector('#modal .dlg').classList.add('wide');
+    drawItems((res.byBranch&&res.byBranch[branch])||res.items||[]);
+    $('mnRest').addEventListener('change',function(){
+      var rid=this.value, list=D.branches.filter(function(b){return b.restaurant===rid;});
+      $('mnBranch').innerHTML=branchOptionsHTML(rid,list.length?(list[0].key||list[0].name):'');
+      fetchMenu();
+    });
+    $('mnBranch').addEventListener('change',fetchMenu);
+    $('menuItems').addEventListener('click',function(e){
+      var edit=e.target.closest('button[data-menu-edit]');
+      if(edit){
+        var item=currentItems.filter(function(x){return x.it===edit.getAttribute('data-menu-edit');})[0];
+        if(item){ $('mnItem').value=item.it; $('mnCat').value=item.cat||''; $('mnPrice').value=item.price==null?'':item.price; $('mnAvail').checked=!!item.av; }
+        return;
+      }
+      var del=e.target.closest('button[data-menu-del]');
+      var avail=e.target.closest('button[data-menu-avail]');
+      if(avail){
+        var targetItem=currentItems.filter(function(x){return x.it===avail.getAttribute('data-menu-avail');})[0];
+        if(!targetItem) return;
+        var scope=$('mnScope').value, targetBranch=scope==='all'?'ALL':$('mnBranch').value;
+        api('setItemAvailability',[targetBranch,targetItem.it,!targetItem.av,scope,$('mnRest').value],function(r){
+          toast(scope==='all'?'تم تحديث التوافر في كل الفروع':'تم تحديث التوافر للفرع المحدد','ok');
+          applyFresh(r); fetchMenu();
+        },function(e2){ toastErr(e2); });
+        return;
+      }
+      if(!del) return;
+      var itemName=del.getAttribute('data-menu-del'), deleteScope=$('mnScope').value;
+      if(!confirm('حذف "'+itemName+'" '+(deleteScope==='all'?'من جميع فروع المطعم':'من الفرع المحدد')+'؟')) return;
+      api('deleteMenuItem',[$('mnRest').value,deleteScope==='all'?'ALL':$('mnBranch').value,itemName],function(r){
+        toast(deleteScope==='all'?'تم حذف الصنف من كل الفروع':'تم حذف الصنف من الفرع المحدد','ok');
+        applyFresh(r);
+        fetchMenu();
+      },function(e2){ toastErr(e2); });
+    });
+  },function(e){ loading(false); toastErr(e); });
+}
+
+/* ---------- إدارة أسباب التوقف حسب المطعم والفرع ---------- */
+function actReasons(){
+  var restaurants=(D.restaurants||[]).filter(function(r){return r.active!==false;});
+  if(!restaurants.length){ toast('لا توجد مطاعم نشطة لإدارة الأسباب.','warn'); return; }
+  var rest=restaurants.some(function(r){return r.id===S.rest;})?S.rest:restaurants[0].id;
+  var branchList=D.branches.filter(function(b){return b.restaurant===rest;});
+  var branch=branchList.some(function(b){return (b.key||b.name)===S.branch;})?S.branch:
+    (branchList[0]?(branchList[0].key||branchList[0].name):'');
+  if(!branch){ toast('لا توجد فروع مسجلة لهذا المطعم.','warn'); return; }
+  var reasons=[], editingReason='';
+  function draw(){
+    $('reasonItems').innerHTML=reasons.length?reasons.map(function(r){
+      return '<div class="menu-row"><span class="mi">'+esc(r)+'</span>'
+        +(isAdminUser()?'<button type="button" class="btn ghost sm" data-reason-edit="'+esc(r)+'">تعديل</button>'
+          +'<button type="button" class="btn ghost sm" data-reason-del="'+esc(r)+'">حذف حسب النطاق</button>':'')
+        +'</div>';
+    }).join(''):'<div class="empty">لا توجد أسباب لهذا الفرع.</div>';
+  }
+  function fetchReasons(){
+    rest=$('rsRest').value; branch=$('rsBranch').value;
+    $('reasonItems').innerHTML='<div class="empty">جاري تحميل الأسباب...</div>';
+    if(!branch){ reasons=[]; draw(); return; }
+    var reasonScope=$('rsScope').value, target=reasonScope==='all'?'ALL':branch;
+    api('listReasons',[rest,target],function(res){ reasons=(res&&res.reasons)||[]; draw(); },
+      function(e){ $('reasonItems').innerHTML='<div class="empty">'+esc(errMsg(e))+'</div>'; });
+  }
+  openModal('إدارة أسباب التوقف',
+    '<label for="rsRest">المطعم</label><select id="rsRest">'+restaurants.map(function(r){
+      return '<option value="'+esc(r.id)+'"'+(r.id===rest?' selected':'')+'>'+esc(r.name)+'</option>';
+    }).join('')+'</select>'
+    +'<label for="rsBranch">الفرع</label><select id="rsBranch">'+branchOptionsHTML(rest,branch)+'</select>'
+    +'<label for="rsScope">نطاق العملية</label><select id="rsScope"><option value="branch">الفرع المحدد فقط</option><option value="all">كل فروع المطعم</option></select>'
+    +'<div class="cfg-note">يمكنك إضافة أو تعديل أو حذف السبب في الفرع المحدد فقط، أو تعميم العملية على جميع فروع المطعم.</div>'
+    +'<div id="reasonItems" style="max-height:220px;overflow:auto;border:1px solid var(--line-soft);border-radius:8px;padding:0 10px"></div>'
+    +'<label for="rsReason">اسم السبب</label><input id="rsReason" type="text" autocomplete="off">'
+    +(isAdminUser()?'':'<p class="hint">إضافة وحذف الأسباب يتطلبان صلاحية مدير النظام.</p>'),
+    'إضافة السبب', function(){
+      if(!needAdmin()) return;
+      var name=$('rsReason').value.trim();
+      if(!name){ toast('اكتب اسم السبب','warn'); return; }
+      if(!$('rsBranch').value){ toast('اختار المطعم والفرع أولاً','warn'); return; }
+      var targetRest=$('rsRest').value, targetBranch=$('rsScope').value==='all'?'ALL':$('rsBranch').value;
+      var btn=$('mSubmit'); btn.disabled=true;
+      if(editingReason){
+        api('saveReason',[{name:editingReason,newName:name,restaurant:targetRest,
+          branch:targetBranch==='ALL'?'':targetBranch,scope:targetBranch==='ALL'?'all':'branch'}],function(){
+          btn.disabled=false; editingReason=''; $('rsReason').value=''; $('mSubmit').textContent='إضافة السبب';
+          toast('تم تعديل السبب في النطاق المحدد','ok'); load(true,true); fetchReasons();
+        },function(e){ btn.disabled=false; toastErr(e); });
+      }else{
+        api('addReason',[name,targetRest,targetBranch],function(res){
+          btn.disabled=false; $('rsReason').value='';
+          toast(res&&res.already?'السبب موجود بالفعل لهذا النطاق':'تمت إضافة السبب للنطاق المحدد','ok');
+          load(true,true); fetchReasons();
+        },function(e){ btn.disabled=false; toastErr(e); });
+      }
+    });
+  document.querySelector('#modal .dlg').classList.add('wide');
+  draw();
+  $('rsRest').addEventListener('change',function(){
+    var rid=this.value, list=D.branches.filter(function(b){return b.restaurant===rid;});
+    $('rsBranch').innerHTML=branchOptionsHTML(rid,list.length?(list[0].key||list[0].name):'');
+    fetchReasons();
+  });
+  $('rsBranch').addEventListener('change',fetchReasons);
+  $('rsScope').addEventListener('change',fetchReasons);
+  $('reasonItems').addEventListener('click',function(e){
+    var edit=e.target.closest('button[data-reason-edit]');
+    if(edit){
+      editingReason=edit.getAttribute('data-reason-edit');
+      $('rsReason').value=editingReason;
+      $('mSubmit').textContent='حفظ تعديل السبب';
+      $('rsReason').focus();
+      return;
+    }
+    var btn=e.target.closest('button[data-reason-del]');
+    if(!btn) return;
+    if(!needAdmin()) return;
+    var name=btn.getAttribute('data-reason-del');
+    var deleteScope=$('rsScope').value;
+    if(!confirm('حذف السبب "'+name+'" '+(deleteScope==='all'?'من جميع فروع المطعم':'من الفرع المحدد')+'؟')) return;
+    var targetRest=$('rsRest').value, targetBranch=$('rsScope').value==='all'?'ALL':$('rsBranch').value;
+    api('deleteReason',[name,targetRest,targetBranch],function(res){
+      reasons=(res&&res.reasons)||[]; draw();
+      toast(deleteScope==='all'?'تم حذف السبب من جميع فروع المطعم':'تم حذف السبب من الفرع المحدد','ok'); load(true,true);
+    },function(e2){ toastErr(e2); });
+  });
+  fetchReasons();
+}
+
+/* ---------- مواعيد العمل اليومية ---------- */
+function timeInputValue(value){
+  var sec=parseSec(value);
+  if(sec===null) return '';
+  return pad(Math.floor(sec/3600)%24)+':'+pad(Math.floor((sec%3600)/60));
+}
+function actDailyHours(branchKey){
+  loading(true);
+  api('getBranchDailyHours',[],function(res){
+    loading(false);
+    var bs=(res&&res.branches)||[];
+    var selected=bs.filter(function(b){ return b.key===branchKey; })[0];
+    if(!selected){ toast('الفرع غير متاح لإدارة مواعيده.','warn'); return; }
+    openModal('مواعيد العمل اليومية — '+(selected.restaurantName?selected.restaurantName+' / ':'')+selected.name,
+      '<p class="hint">كل يوم له ميعاد فتح وقفل مستقل. وقت القفل هو اللي بيشغّل الإغلاق التلقائي وترحيل الشيفت.</p>'
+      +'<div class="days-grid" id="dhGrid"></div>'
+      +'<div class="chkrow"><input id="dhCopy" type="checkbox"><label for="dhCopy" style="margin:0">طبّق ميعاد يوم الأحد على كل الأيام</label></div>',
+      'حفظ المواعيد', function(){
+        var days=[];
+        for(var i=0;i<7;i++){
+          var o=$('dhO'+i), c=$('dhC'+i), x=$('dhX'+i);
+          days.push({closed:!!(x&&x.checked),open:o?o.value:'',close:c?c.value:''});
+        }
+        var btn=$('mSubmit'); btn.disabled=true;
+        api('saveBranchDailyHours',[selected.key,days],function(r){
+          btn.disabled=false; toast('تم حفظ مواعيد العمل','ok'); closeModal(); applyFresh(r);
+        },function(e){ btn.disabled=false; toastErr(e); });
+      });
+    document.querySelector('#modal .dlg').classList.add('wide');
+    function paint(){
+      $('dhGrid').innerHTML='<div class="dh">اليوم</div><div class="dh">الفتح</div><div class="dh">القفل</div><div class="dh">مقفول</div>'
+        +selected.days.map(function(d,i){
+          return '<div class="dayname">'+DAY_NAMES[i]+'</div>'
+            +'<input id="dhO'+i+'" type="time" step="60" value="'+esc(timeInputValue(d.open))+'"'+(d.closed?' disabled':'')+'>'
+            +'<input id="dhC'+i+'" type="time" step="60" value="'+esc(timeInputValue(d.close))+'"'+(d.closed?' disabled':'')+'>'
+            +'<input id="dhX'+i+'" type="checkbox" aria-label="مقفول"'+(d.closed?' checked':'')+'>';
+        }).join('');
+      for(var i=0;i<7;i++){
+        (function(i){
+          $('dhX'+i).addEventListener('change',function(){
+            $('dhO'+i).disabled=this.checked; $('dhC'+i).disabled=this.checked;
+          });
+        })(i);
+      }
+    }
+    paint();
+    $('dhCopy').addEventListener('change',function(){
+      if(!this.checked) return;
+      var o=$('dhO0').value, c=$('dhC0').value;
+      for(var i=1;i<7;i++){ if(!$('dhX'+i).checked){ $('dhO'+i).value=o; $('dhC'+i).value=c; } }
+    });
+  },function(e){ loading(false); toastErr(e); });
+}
+
+/* ---------- ترحيل الشيفت / إغلاق اليوم — براند + فرع محدد فقط ---------- */
+function actRollover(){
+  if(!D) return;
+  var activeRestaurants=(D.restaurants||[]).filter(function(r){ return r.active!==false; });
+  if(!activeRestaurants.length){ toast('لا توجد مطاعم نشطة لتنفيذ الإغلاق.','warn'); return; }
+  var isBranch=D.me.role==='branch';
+  var rest=(S.rest && activeRestaurants.some(function(r){return r.id===S.rest;}))?S.rest:activeRestaurants[0].id;
+  var restName=function(rid){
+    var r=activeRestaurants.filter(function(x){return x.id===rid;})[0];
+    return r?r.name:rid;
+  };
+  function allowed(b){ return !isBranch || b.key===D.me.branch || b.name===D.me.branch; }
+  if(!D.branches.some(function(b){ return b.restaurant===rest && allowed(b); })){ toast('لا توجد فروع تابعة للمطعم المحدد.','warn'); return; }
+  var brandField=isBranch
+    ? '<label>المطعم</label><input type="text" value="'+esc(restName(rest))+'" readonly>'
+    : '<label for="rollRest">المطعم</label><select id="rollRest">'+activeRestaurants.map(function(r){
+        return '<option value="'+esc(r.id)+'"'+(r.id===rest?' selected':'')+'>'+esc(r.name)+'</option>';
+      }).join('')+'</select>';
+  openModal('إغلاق اليوم وترحيل الشيفت',
+    brandField
+    +'<label for="rollBranch">الفرع المستهدف</label><select id="rollBranch"'+(isBranch?' disabled':'')+'>'+branchOptionsHTML(rest, S.branch, allowed)+'</select>'
+    +'<div class="cfg-note">كل عملية إغلاق تخص فرعًا واحدًا فقط داخل المطعم المحدد. لن يتأثر أي فرع آخر.</div>'
+    +'<div class="tbl-wrap"><table style="min-width:660px"><thead><tr><th>الوقت</th><th>الفرع</th><th>يوم الشيفت</th><th>الشيفت</th><th class="num">وقفات</th><th class="num">اتقفل</th><th>بواسطة</th></tr></thead><tbody id="shiftLogRows"><tr><td colspan="7" class="empty">جاري تحميل السجل...</td></tr></tbody></table></div>'
+    +'<p class="hint">الإغلاق التلقائي معطّل افتراضيًا، ولو اتفعّل بيعالج فرعًا واحدًا محددًا في الإعدادات. الزر هنا ينفذ الإغلاق للفرع المختار فقط.</p>',
+    'إغلاق الفرع المحدد الآن', function(){
+      var selected=$('rollBranch').value;
+      var rollRest=$('rollRest')?$('rollRest').value:rest;
+      if(!selected){ toast('اختار الفرع المستهدف','warn'); return; }
+      var btn=$('mSubmit'); btn.disabled=true;
+      api('runShiftRollover',[selected,false,rollRest],function(r){
+        btn.disabled=false;
+        var result=(r&&r.results&&r.results[0])||{};
+        if(result.ok){
+          toast('تم إغلاق '+result.branch+' — اتقفل '+(result.closed||0)+' ايتم','ok');
+          closeModal(); load(true,true);
+        }else{
+          var msg=result.error||result.reason||'لم يتم ترحيل الشيفت للفرع المحدد.';
+          if(result.skipped) toast(msg,'warn'); else toastErr(msg);
+        }
+      },function(e){ btn.disabled=false; toastErr(e); });
+    });
+  document.querySelector('#modal .dlg').classList.add('wide');
+  function loadShiftLog(){
+    var rid=$('rollRest')?$('rollRest').value:rest;
+    var sel=$('rollBranch')?$('rollBranch').value:'';
+    api('getShiftLog',[50,sel,rid],function(res){
+      var list=(res&&res.entries)||[];
+      $('shiftLogRows').innerHTML=list.length?list.map(function(x){
+        return '<tr><td class="num">'+esc(x.at)+'</td><td>'+esc(x.branch)+'</td><td class="num">'+esc(x.day)+'</td>'
+          +'<td class="num">'+esc(x.open)+' → '+esc(x.close)+'</td><td class="num">'+x.stops+'</td><td class="num">'+x.closed+'</td><td>'+esc(x.note||x.actor)+'</td></tr>';
+      }).join(''):'<tr><td colspan="7" class="empty">لا توجد عمليات ترحيل لهذا الفرع.</td></tr>';
+    },function(e){ $('shiftLogRows').innerHTML='<tr><td colspan="7" class="empty">'+esc(errMsg(e))+'</td></tr>'; });
+  }
+  if($('rollRest')){
+    $('rollRest').addEventListener('change',function(){
+      rest=this.value;
+      $('rollBranch').innerHTML=branchOptionsHTML(rest, '', allowed);
+      loadShiftLog();
+    });
+  }
+  $('rollBranch').addEventListener('change',loadShiftLog);
+  loadShiftLog();
+}
+
+/* ---------- سجل الأخطاء ---------- */
+function actErrors(){
+  if(!needAdmin()) return;
+  loading(true);
+  api('getErrorLog',[200],function(res){
+    loading(false);
+    var list=(res&&res.entries)||[];
+    var html=list.map(function(x){
+      return '<div style="border-bottom:1px solid var(--line-soft);padding:9px 0">'
+        +'<div class="num" style="font-size:12px;color:var(--muted)">'+esc(x.at)+' · '+esc(x.action)+' · '+esc(x.by)+' · '+esc(x.code)+'</div>'
+        +'<div style="font-weight:600;font-size:13.5px;overflow-wrap:anywhere">'+esc(x.message)+'</div>'
+        +'<pre dir="ltr" style="margin:6px 0 0;background:#FBF8EC;border:1px solid var(--line-soft);border-radius:6px;padding:6px 8px;font-size:11.5px;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto;text-align:left">'+esc(x.detail||x.stack||'')+'</pre></div>';
+    }).join('');
+    openModal('سجل الأخطاء', html||'<div class="empty">مفيش أخطاء مسجلة.</div>', 'تصدير Excel', function(){
+      downloadXlsx('سجل-الأخطاء-'+(D?D.now:'')+'.xlsx',[{name:'Errors',rows:[['At','Action','Actor','Role','Code','Message','Detail','Stack']].concat(list.map(function(x){return [x.at,x.action,x.by,x.role,x.code,x.message,x.detail,x.stack];}))}]);
+    });
+    document.querySelector('#modal .dlg').classList.add('wide');
+  },function(e){ loading(false); toastErr(e); });
+}
+
+/* ---------- ربط عناصر صندوق الأخطاء ---------- */
+$('ebClose').addEventListener('click',function(){ $('errBox').hidden=true; });
+$('ebCopy').addEventListener('click',function(){
+  var t=$('ebTitle').textContent+'\n'+$('ebMsg').textContent+'\n'+$('ebDetail').textContent;
+  try{ navigator.clipboard.writeText(t); toast('تم نسخ تفاصيل الخطأ','ok'); }catch(e){ toast('حدد النص وانسخه يدويًا',''); }
+});
+$('ebLog').addEventListener('click',actErrors);
+/* =====================================================
+   الأحداث
+   ===================================================== */
+function closeMenu(){ $('gearMenu').hidden=true; $('gearBtn').setAttribute('aria-expanded','false'); }
+
+$('gearBtn').addEventListener('click',function(e){
+  e.stopPropagation();
+  var open=$('gearMenu').hidden; $('gearMenu').hidden=!open; this.setAttribute('aria-expanded',open?'true':'false');
+});
+document.addEventListener('click',function(e){ if(!$('gearMenu').contains(e.target)) closeMenu(); });
+function markAllNotificationsRead(){
+  api('markNotificationsRead',[[]],function(res){
+    renderNotifications((res&&res.items)||[]);
+    setNotificationBadge(res&&res.unread);
+  },function(e){ toastErr(e); });
+}
+$('notifBtn').addEventListener('click',function(e){
+  e.stopPropagation(); unlockNotificationAudio();
+  var open=$('notifPanel').hidden;
+  $('notifPanel').hidden=!open;
+  this.setAttribute('aria-expanded',open?'true':'false');
+  if(open) loadNotifications(false);
+});
+$('notifReadAll').addEventListener('click',markAllNotificationsRead);
+document.addEventListener('click',function(e){
+  if(!$('notifPanel').contains(e.target)&&e.target!==$('notifBtn')){
+    $('notifPanel').hidden=true; $('notifBtn').setAttribute('aria-expanded','false');
+  }
+});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){ closeMenu(); closeModal(); }
+  if(e.key==='Enter' && !$('modal').hidden && e.target.tagName==='INPUT'){ e.preventDefault(); $('mSubmit').click(); }
+});
+
+document.querySelectorAll('#gearMenu button').forEach(function(b){
+  b.addEventListener('click',function(){
+    closeMenu();
+    var a=b.getAttribute('data-act');
+    if(a==='fetch') load(true);
+    else if(a==='logStop') actLogStop();
+    else if(a==='lists') actLists();
+    else if(a==='restaurants') actRestaurants();
+    else if(a==='menu') actMenu();
+    else if(a==='reasons') actReasons();
+    else if(a==='rollover') actRollover();
+    else if(a==='errors') actErrors();
+    else if(a==='users') actUsers();
+    else if(a==='branches') actBranches();
+    else if(a==='audit') actAudit();
+    else if(a==='exportAll') exportXlsx('all');
+    else if(a==='clearData') actClearData();
+  });
+});
+
+/* تسجيل الدخول / الخروج */
+$('loginForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  unlockNotificationAudio();
+  var u=$('lgUser').value.trim(), p=$('lgPass').value;
+  if(!u || !p){ $('lgErr').textContent='اكتب اسم المستخدم وكلمة السر.'; return; }
+  $('lgBtn').disabled=true; $('lgErr').textContent=''; loading(true);
+  google.script.run
+    .withSuccessHandler(function(res){
+      loading(false); $('lgBtn').disabled=false; $('lgPass').value='';
+      TOKEN=res.token; saveToken(); onData(res.data);
+    })
+    .withFailureHandler(function(err){ loading(false); $('lgBtn').disabled=false; $('lgErr').textContent=errMsg(err); })
+    .login(u,p);
+});
+$('logoutBtn').addEventListener('click',function(){
+  try{ google.script.run.logout(TOKEN); }catch(e){}
+  toLogin('');
+});
+
+/* فلاتر الايجينت */
+$('aBranch').addEventListener('change',function(){ A.branch=this.value; renderAgentView(); });
+$('aQ').addEventListener('input',function(){ A.q=this.value; renderAgentView(); });
+
+$('mCancel').addEventListener('click',closeModal);
+$('modal').addEventListener('mousedown',function(e){ if(e.target===this) closeModal(); });
+
+document.querySelectorAll('.tabs [data-tab]').forEach(function(b){
+  b.addEventListener('click',function(){
+    S.tab=b.getAttribute('data-tab');
+    document.querySelectorAll('.tabs [data-tab]').forEach(function(x){ x.setAttribute('aria-selected', x===b?'true':'false'); });
+    ['summary','reasons','log','grid','reports','times','open'].forEach(function(t){ $('tab-'+t).hidden=(t!==S.tab); });
+    render();
+  });
+});
+
+$('fMode').addEventListener('change',function(){ S.mode=this.value; syncFilters(); render(); });
+$('fMonth').addEventListener('change',function(){ if(this.value){ S.month=this.value; render(); } });
+$('fDay').addEventListener('change',function(){ if(this.value){ S.day=this.value; render(); } });
+$('fFrom').addEventListener('change',function(){ S.from=this.value; render(); });
+$('fTo').addEventListener('change',function(){ S.to=this.value; render(); });
+$('fBranch').addEventListener('change',function(){ S.branch=this.value; render(); });
+$('fRest').addEventListener('change',function(){
+  S.rest=this.value; S.branch='all';
+  if(D && D.me && D.me.role==='management') load(false);   // بيانات البراند المحدد فقط من السيرفر
+  else { prepare(); render(); }
+});
+$('fQ').addEventListener('input',function(){ S.q=this.value; render(); });
+
+/* إعدادات Post Grid */
+$('gStatus').addEventListener('change',function(){ G.status=this.value; renderGrid(); });
+$('gSort').addEventListener('change',function(){ G.sort=this.value; renderGrid(); });
+$('gGroup').addEventListener('change',function(){ G.group=this.checked; renderGrid(); });
+$('gCompact').addEventListener('change',function(){ G.compact=this.checked; renderGrid(); });
+
+document.querySelectorAll('.quick [data-q]').forEach(function(b){
+  b.addEventListener('click',function(){
+    if(!D) return;
+    var q=b.getAttribute('data-q');
+    if(q==='today'){ S.mode='day'; S.day=D.now; }
+    else if(q==='yesterday'){ S.mode='day'; S.day=addDays(D.now,-1); }
+    else { S.mode='month'; S.month=D.now.slice(0,7); }
+    syncFilters(); render();
+  });
+});
+
+/* ترتيب الجداول (تفويض أحداث) + زرار التشغيل */
+document.addEventListener('click',function(e){
+  var th=e.target.closest && e.target.closest('th[data-k]');
+  if(th){
+    var k=th.getAttribute('data-k');
+    S.sort = (S.sort.k===k) ? {k:k,dir:-S.sort.dir} : {k:k,dir:(k==='it'?1:-1)};
+    render(); return;
+  }
+  var rb=e.target.closest && e.target.closest('[data-resume]');
+  if(rb){ onResumeClick(rb); return; }
+  var ls=e.target.closest && e.target.closest('[data-do="logStop"]');
+  if(ls){ actLogStop(); return; }
+  var et=e.target.closest && e.target.closest('[data-do="editTimes"]');
+  if(et){ actEditTimes(et.getAttribute('data-b')); return; }
+  var eh=e.target.closest && e.target.closest('[data-do="editHours"]');
+  if(eh){ actEditHours(eh.getAttribute('data-b')); return; }
+  var xs=e.target.closest && e.target.closest('[data-xlsx]');
+  if(xs){ exportXlsx(xs.getAttribute('data-xlsx')); return; }
+});
+
+/* البداية: لو فيه جلسة محفوظة نكمل بيها، غير كده شاشة الدخول */
+if(TOKEN) load(false); else toLogin('');
+</script>
+</body>
+</html>
