@@ -47,7 +47,8 @@ const COL = {
   audit: 'audit_logs',
   notif: 'notifications',
   shift: 'shift_log',
-  errors: 'error_log'
+  errors: 'error_log',
+  lists: 'dropdown_lists'
 };
 const ALL_COLS = Object.keys(COL).map(function (k) { return COL[k]; });
 
@@ -445,22 +446,33 @@ class FirestoreBackend {
       username: record.username,
       role: record.role,
       branch: record.branch || '',
+      branches: Array.isArray(record.branches) ? record.branches.slice() : [],
       restaurant: record.restaurant || '',
       isAdmin: !!record.isAdmin || keyOf(record.username) === 'admin'
     };
+    /* لو الحساب مربوط بفرع واحد فقط (نسخة قديمة) → نحوله لقائمة */
+    if (!u.branches.length && u.branch) u.branches = [u.branch];
     if (u.role === ROLES.MGMT) {
       if (!u.restaurant && !this.isGlobal(u)) {
         var act = this.state[COL.restaurants].filter(function (r) { return r.active !== false; });
         u.restaurant = (act[0] || this.state[COL.restaurants][0] || {}).id || '';
       }
+      u.branches = [];
       return u;
     }
     if (u.role === ROLES.BRANCH || u.role === ROLES.AGENT) {
-      if (!u.branch) throw err('الحساب غير مربوط بفرع. كلّم مدير النظام.');
-      var rec = this._branchRecord(u.branch, u.restaurant || null);
-      if (!rec) throw err('الحساب غير مربوط بفرع نشط.');
-      u.branch = rec.key;
-      u.restaurant = rec.restaurant;
+      if (!u.branches.length) throw err('الحساب غير مربوط بفرع. كلّم مدير النظام.');
+      /* بنتحقق إن كل فرع موجود ونشط فعلاً */
+      var self = this;
+      var recs = [];
+      for (var i = 0; i < u.branches.length; i++) {
+        var rec = this._branchRecord(u.branches[i], u.restaurant || null);
+        if (rec) recs.push(rec);
+      }
+      if (!recs.length) throw err('الحساب غير مربوط بفرع نشط.');
+      u.branches = recs.map(function (r) { return r.key; });
+      u.branch = u.branches[0];
+      u.restaurant = recs[0].restaurant;
     }
     return u;
   }
@@ -602,13 +614,17 @@ class FirestoreBackend {
 
   _allowedBranches(u, rid, scoped) {
     var self = this;
+    /* فروع اليوزر (قائمة — ممكن يبقى مربوط بأكثر من فرع) */
+    var mine = Array.isArray(u.branches) ? u.branches : (u.branch ? [u.branch] : []);
+    var mineKeys = {};
+    mine.forEach(function (k) { mineKeys[keyOf(k)] = 1; });
     return this.state[COL.branches].filter(function (b) {
       if (b.active === false) return false;
       if (!self.isGlobal(u) || scoped) {
         if (!same(b.restaurant, rid)) return false;
       }
       if (u.role === ROLES.BRANCH || u.role === ROLES.AGENT) {
-        return same(b.key, u.branch) || same(b.name, u.branch);
+        return !!mineKeys[keyOf(b.key)] || !!mineKeys[keyOf(b.name)];
       }
       return true;
     });
@@ -944,6 +960,7 @@ class FirestoreBackend {
       nowSec: now.sec,
       me: {
         username: u.username || u.email, email: u.email || '', role: u.role, branch: u.branch,
+        branches: Array.isArray(u.branches) ? u.branches : (u.branch ? [u.branch] : []),
         restaurant: u.restaurant || '', isAdmin: !!u.isAdmin
       },
       branches: branches,
@@ -1346,7 +1363,9 @@ class FirestoreBackend {
     var scoped = this.isGlobal(u) && !!restaurant;
     var allowed = this._allowedBranches(u, rid, scoped);
 
-    var branches = allowed.map(function (b) {
+    var branches = [];
+    for (var i = 0; i < allowed.length; i++) {
+      var b = allowed[i];
       var si = self.shiftInfo(b, now);
       var stopped = [], seen = {};
       self._openStops(b.key).forEach(function (s) {
@@ -1354,15 +1373,25 @@ class FirestoreBackend {
         if (!it || seen[keyOf(it)]) return;
         seen[keyOf(it)] = 1; stopped.push(it);
       });
-      return {
+      /* قوائم الاختيار: من الكاش لو طازة، وإلا من الداتا (ونحدّث الكاش) */
+      var dl = await self._dropdownFor(b);
+      if (!dl.cached) {
+        try {
+          await setDoc(doc(self.db, COL.lists, self._listId(b.restaurant, b.key)), {
+            restaurant: b.restaurant, branch: b.key, branchName: b.name,
+            items: dl.items, reasons: dl.reasons,
+            at: nowIso(), updatedAt: nowIso(), by: u.username
+          });
+        } catch (e) { /* الكاش اختياري */ }
+      }
+      branches.push({
         key: b.key, name: b.name, restaurant: b.restaurant,
         brandName: self.brandName(b.restaurant),
         closed: !si.openNow, open: fmtHMS(si.openSec), close: fmtHMS(si.closeSec),
-        items: self.menuForBranch(b.restaurant, b.key).map(function (x) { return x.it; }),
-        reasons: self.reasonsForBranch(b.restaurant, b.key),
+        items: dl.items, reasons: dl.reasons,
         stopped: stopped
-      };
-    });
+      });
+    }
 
     var brands = this.state[COL.restaurants].filter(function (r) {
       return r.active !== false && (self.isGlobal(u) || same(r.id, rid));
@@ -1374,12 +1403,127 @@ class FirestoreBackend {
     };
   }
 
+  /**
+   * قوائم الاختيار (الكاش): الأصناف والأسباب لكل فرع — بتتسجل مرة واحدة
+   * وتتفrefresh من غير ما نحسبهم في كل مرة.
+   */
+  _listId(restaurant, branchKey) {
+    return String(restaurant || '') + '|' + String(branchKey || '');
+  }
+
+  /** محتوى قائمة الاختيار لفرع واحد (من الكاش لو الطازة، وإلا من الداتا) */
+  async _dropdownFor(rec) {
+    var id = this._listId(rec.restaurant, rec.key);
+    var cached = this.state[COL.lists].filter(function (x) { return x.id === id; })[0];
+    var fresh = cached && cached.at && (Date.now() - Date.parse(cached.at.replace(' ', 'T')) < 5 * 60 * 1000);
+    if (fresh && Array.isArray(cached.items) && Array.isArray(cached.reasons)) {
+      return { items: cached.items, reasons: cached.reasons, cached: true };
+    }
+    var items = this.menuForBranch(rec.restaurant, rec.key).map(function (x) { return x.it; });
+    var reasons = this.reasonsForBranch(rec.restaurant, rec.key);
+    return { items: items, reasons: reasons, cached: false };
+  }
+
+  /** يبني/يحدّث كاش قوائم الاختيار لمطعم (أو لكل المطاعم) */
+  async _rebuildDropdownCache(restaurant) {
+    var me = this.session && this.session.user;
+    var self = this;
+    var recs = this.state[COL.branches].filter(function (b) {
+      if (b.active === false) return false;
+      if (restaurant && !same(b.restaurant, restaurant)) return false;
+      return true;
+    });
+    var written = 0;
+    for (var i = 0; i < recs.length; i++) {
+      var rec = recs[i];
+      var items = self.menuForBranch(rec.restaurant, rec.key).map(function (x) { return x.it; });
+      var reasons = self.reasonsForBranch(rec.restaurant, rec.key);
+      await setDoc(doc(self.db, COL.lists, self._listId(rec.restaurant, rec.key)), {
+        restaurant: rec.restaurant, branch: rec.key, branchName: rec.name,
+        items: items, reasons: reasons,
+        at: nowIso(), updatedAt: nowIso(), by: me ? me.username : 'system'
+      });
+      written++;
+    }
+    await this._reload(COL.lists);
+    return written;
+  }
+
+  /** تحديث قوائم الاختيار (من غير مسح) */
   async refreshLists(restaurant) {
-    var u = this._require();
+    var u = this._require([ROLES.MGMT]);
     await this.hydrate(true);
+    var rid = restaurant ? this.resolveRestaurant(u, restaurant) : '';
+    var n = await this._rebuildDropdownCache(rid);
     this.rev++;
     this._emitSoon();
-    return { ok: true, data: this.scopedPayload(restaurant || '') };
+    return { ok: true, lists: n, data: this.scopedPayload(restaurant || '') };
+  }
+
+  /* ============================================================
+   *  أدوات الصيانة (مدير النظام بس)
+   * ============================================================ */
+
+  /** حذف كل السجلات من مجموعة (ب batches) */
+  async _wipeCollection(name) {
+    var rows = this.state[name] || [];
+    for (var i = 0; i < rows.length; i += 400) {
+      var batch = writeBatch(this.db);
+      var self = this;
+      rows.slice(i, i + 400).forEach(function (r) { batch.delete(doc(self.db, name, r.id)); });
+      await batch.commit();
+    }
+    await this._reload(name);
+    this.rev++;
+    this._emitSoon();
+    return rows.length;
+  }
+
+  /** حذف سجل العمليات (audit_logs) */
+  async clearAuditLog(password) {
+    var u = this._require([ROLES.MGMT]);
+    if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
+    await this._reauth(password);
+    var n = await this._wipeCollection(COL.audit);
+    await this._audit(u, 'AUDIT_CLEAR', 'ALL', { deleted: n }, 'OK');
+    return { ok: true, deleted: n, collection: 'audit_logs' };
+  }
+
+  /** حذف سجل الأخطاء (error_log) */
+  async clearErrorLog(password) {
+    var u = this._require([ROLES.MGMT]);
+    if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
+    await this._reauth(password);
+    var n = await this._wipeCollection(COL.errors);
+    await this._audit(u, 'ERRORS_CLEAR', 'ALL', { deleted: n }, 'OK');
+    return { ok: true, deleted: n, collection: 'error_log' };
+  }
+
+  /** تفريغ قوائم الاختيار (الكاش) */
+  async clearDropdowns(password) {
+    var u = this._require([ROLES.MGMT]);
+    if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
+    await this._reauth(password);
+    var n = await this._wipeCollection(COL.lists);
+    await this._audit(u, 'DROPDOWNS_CLEAR', 'ALL', { deleted: n }, 'OK');
+    return { ok: true, deleted: n, collection: 'dropdown_lists' };
+  }
+
+  /** حالة قوائم الاختيار (للعرض) */
+  async getDropdownStatus() {
+    this._require([ROLES.MGMT]);
+    await this.hydrate();
+    return {
+      ok: true,
+      count: this.state[COL.lists].length,
+      lists: this.state[COL.lists].slice(0, 100).map(function (x) {
+        return {
+          id: x.id, restaurant: x.restaurant, branch: x.branch,
+          items: (x.items || []).length, reasons: (x.reasons || []).length,
+          at: x.at || ''
+        };
+      })
+    };
   }
 
   async clearAllData(password) {
@@ -1422,13 +1566,18 @@ class FirestoreBackend {
       return global || !x.restaurant || same(x.restaurant, u.restaurant);
     }).map(function (x) {
       var branch = x.branch || '';
+      var list = Array.isArray(x.branches) ? x.branches.slice() : (branch ? [branch] : []);
       if (branch && x.role !== ROLES.MGMT) {
         var rec = self._branchRecord(branch, x.restaurant || null);
         if (rec) branch = rec.key;
       }
+      list = list.map(function (k) {
+        var r2 = self._branchRecord(k, x.restaurant || null);
+        return r2 ? r2.key : k;
+      });
       return {
         username: x.email || x.username, display: x.username || '',
-        role: x.role, branch: branch,
+        role: x.role, branch: branch, branches: list,
         active: x.active !== false, restaurant: x.restaurant || '',
         isAdmin: !!x.isAdmin
       };
@@ -1453,13 +1602,6 @@ class FirestoreBackend {
     var restaurant = cleanText(u.restaurant, 40);
     if (!this.isGlobal(me)) restaurant = me.restaurant;
     if (role === ROLES.MGMT && this.isGlobal(me) && !restaurant && u.isAdmin) restaurant = '';
-    var branch = role === ROLES.MGMT ? '' : cleanText(u.branch, 60);
-    if (role !== ROLES.MGMT && !branch) throw err('اختار الفرع.');
-    if (role !== ROLES.MGMT) {
-      var rec = this._branchRecord(branch, restaurant || null);
-      if (!rec) throw err('الفرع غير موجود أو مش تابع للمطعم.');
-      branch = rec.key; restaurant = rec.restaurant;
-    }
     var isAdmin = role === ROLES.MGMT ? !!u.isAdmin : false;
     if (isAdmin && !this.isGlobal(me)) throw err('صلاحية مدير النظام متاحة لمدير النظام الحالي فقط.');
     var existing = this._findUser(email) || this._findUser(display);
@@ -1479,9 +1621,39 @@ class FirestoreBackend {
       throw err('مينفعش تغيّر إيميل حسابك الحالي.');
     }
 
+    /* الفروع: قائمة فروع (اختيار واحد أو "إضافة الكل" = كل فروع المطعم) */
+    var branchList = [];
+    if (role !== ROLES.MGMT) {
+      var raw = u.branches;
+      if (Array.isArray(raw)) branchList = raw.map(function (x) { return cleanText(x, 60); }).filter(Boolean);
+      else if (cleanText(u.branch, 60) === 'all') branchList = ['all'];
+      else branchList = [cleanText(u.branch, 60)];
+      if (!branchList.length) throw err('اختار الفرع.');
+      var restForBranches = restaurant || null;
+      if (branchList.length === 1 && keyOf(branchList[0]) === 'all') {
+        /* كل فروع المطعم المختار */
+        var all = this.state[COL.branches].filter(function (b) {
+          return b.active !== false && (!restForBranches || same(b.restaurant, restForBranches));
+        });
+        if (!all.length) throw err('المطعم المختار مفيهوش فروع.');
+        branchList = all.map(function (b) { return b.key; });
+        restaurant = all[0].restaurant;
+      } else {
+        var recs = [];
+        for (var i = 0; i < branchList.length; i++) {
+          var rec = this._branchRecord(branchList[i], restForBranches);
+          if (!rec) throw err('الفرع غير موجود أو مش تابع للمطعم.');
+          recs.push(rec);
+        }
+        branchList = recs.map(function (r) { return r.key; });
+        restaurant = recs[0].restaurant;
+      }
+    }
+    var branch = role === ROLES.MGMT ? '' : (branchList[0] || '');
+
     var data = {
       username: display, usernameKey: keyOf(email), email: email,
-      role: role, branch: branch, restaurant: restaurant || '',
+      role: role, branch: branch, branches: branchList, restaurant: restaurant || '',
       isAdmin: isAdmin, active: u.active !== false,
       updatedAt: nowIso(), updatedBy: me.username
     };
@@ -1625,11 +1797,26 @@ class FirestoreBackend {
     for (var j = 0; j < times.length; j++) await deleteDoc(doc(this.db, COL.times, times[j].id));
     this.state[COL.times] = this.state[COL.times].filter(function (t) { return !same(t.branch, b.key); });
 
-    var users = this.state[COL.users].filter(function (u) { return same(u.branch, b.key); });
+    /* اليوزرات المرتبطة بالفرع: نشيله من قايمة فروعهم ونوقفهم */
+    var users = this.state[COL.users].filter(function (u) {
+      var list = Array.isArray(u.branches) ? u.branches : (u.branch ? [u.branch] : []);
+      return list.some(function (k) { return same(k, b.key); });
+    });
     for (var k = 0; k < users.length; k++) {
-      await updateDoc(doc(this.db, COL.users, users[k].id), { active: false, ver: this._randHex(8), updatedAt: nowIso() });
+      var oldList = Array.isArray(users[k].branches) ? users[k].branches.slice() : (users[k].branch ? [users[k].branch] : []);
+      var newList = oldList.filter(function (x) { return !same(x, b.key); });
+      var patch = {
+        branches: newList, branch: newList[0] || '',
+        active: false, ver: this._randHex(8), updatedAt: nowIso()
+      };
+      await updateDoc(doc(this.db, COL.users, users[k].id), patch);
+      users[k].branches = newList; users[k].branch = patch.branch;
       users[k].active = false;
     }
+
+    /* كاش قوائم الاختيار للفرع المحذوف */
+    var listId = this._listId(b.restaurant, b.key);
+    try { await deleteDoc(doc(this.db, COL.lists, listId)); } catch (e) { }
 
     await deleteDoc(doc(this.db, COL.branches, b.key));
     this.state[COL.branches] = this.state[COL.branches].filter(function (x) { return x.id !== b.key && x.key !== b.key; });
@@ -2300,6 +2487,10 @@ const ACTIONS = {
   deleteUser: 'deleteUser',
   getAuditLog: 'getAuditLog',
   getErrorLog: 'getErrorLog',
+  clearAuditLog: 'clearAuditLog',
+  clearErrorLog: 'clearErrorLog',
+  clearDropdowns: 'clearDropdowns',
+  getDropdownStatus: 'getDropdownStatus',
   branchDeleteInfo: 'branchDeleteInfo',
   deleteBranch: 'deleteBranch',
   createBranch: 'createBranch',

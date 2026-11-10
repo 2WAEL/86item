@@ -3,15 +3,11 @@ rules_version = '2';
 /*
   قواعد Firestore لمشروع item-f8564 — داشبورد الايتمات الموقوفة (Standalone)
   ------------------------------------------------------------
-  التطبيق بقى Standalone بالكامل:
-    - Firestore للداتا (إيقاف/تشغيل الأصناف، المنيو، الأسباب، الفروع، …)
+  التطبيق بيستخدم:
+    - Cloud Firestore للداتا
     - Firebase Authentication للدخول (Email + Password)
 
   🔐 كل الطلبات لازم تكون من مستخدم مسجّل دخول في Firebase Auth.
-     الحساب نفسه (الإيميل) موجود في Firebase Auth، والملف الشخصي
-     (الدور/الفرع/المطعم) في collection "users" — والعزل بين الحسابات
-     بيتعمل داخل التطبيق (backend) لأن كل المستخدمين بيشاركوا نفس الـ
-     Firebase project.
 
   ⚠️ قبل نشر القواعد دي تأكد إن Email/Password مفعّل:
      Firebase Console → Authentication → Sign-in method → Email/Password → Enable
@@ -55,6 +51,10 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     match /error_log/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    // كاش قوائم الاختيار (الأصناف والأسباب لكل فرع)
+    match /dropdown_lists/{docId} {
       allow read, write: if request.auth != null;
     }
 

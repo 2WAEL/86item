@@ -382,7 +382,11 @@ details.branch .body{padding:0 18px 16px}
         <button data-act="audit" data-roles="management">🧾 سجل العمليات (Audit)</button>
         <button data-act="errors" data-roles="management">🛠️ سجل الأخطاء</button>
         <button data-act="exportAll" data-roles="management">⬇ تصدير كل التقارير (Excel)</button>
-        <button data-act="lists" data-roles="management">🧩 تحديث قوائم الاختيار في الشيتات</button>
+        <button data-act="lists" data-roles="management">🧩 تحديث قوائم الاختيار</button>
+        <hr data-roles="management">
+        <button data-act="clearAudit" data-roles="management" class="danger">🗑️ مسح سجل العمليات</button>
+        <button data-act="clearErrors" data-roles="management" class="danger">🗑️ مسح سجل الأخطاء</button>
+        <button data-act="clearLists" data-roles="management" class="danger">🗑️ تفريغ قوائم الاختيار</button>
         <hr data-roles="management">
         <button data-act="clearData" data-roles="management" class="danger">🧨 مسح كل الداتا</button>
       </div>
@@ -1776,17 +1780,21 @@ function stopResultMessage(r,item){
 function actLogStop(){
   if(!D || !D.branches.length){ toast('لا توجد فروع متاحة لتنفيذ العملية.','warn'); return; }
   var isBranch=(D.me.role==='branch');
-  var ownBranch=isBranch?branchObj(D.me.branch):null;
+  var myBranches=D.branches||[];
+  var multiBranch=isBranch && myBranches.length>1;
+  var ownBranch=isBranch?(branchObj(D.me.branch)||myBranches[0]):null;
   if(isBranch && !ownBranch){ toast('حسابك غير مربوط بفرع نشط. كلّم مدير النظام.','warn'); return; }
   var rid0=(isBranch&&D.me.restaurant)?D.me.restaurant:S.rest;
 
   var branchVal=function(scope){
-    if(isBranch) return ownBranch.key;
+    if(isBranch && !multiBranch) return ownBranch.key;
     return (scope||STOP.scope)==='all' ? '' : $('lBranch').value;
   };
   var brandField=isBranch
     ? '<label>البراند</label><input type="text" value="'+esc(stopBrandName(D.me.restaurant))+'" readonly>'
-      +'<label>الفرع</label><input type="text" value="'+esc(ownBranch.name)+'" readonly>'
+      +(multiBranch
+        ? '<label for="lBranch">الفرع</label><select id="lBranch"></select>'
+        : '<label>الفرع</label><input type="text" value="'+esc(ownBranch.name)+'" readonly>')
     : '<label for="lBrand">البراند</label><select id="lBrand"></select>'
       +'<label for="lScope">نطاق الإيقاف</label><select id="lScope">'
       +'<option value="branch">فرع واحد محدد</option>'
@@ -1844,7 +1852,7 @@ function actLogStop(){
   }
 
   function fillBranches(){
-    if(isBranch || !$('lBranch')) return;
+    if((isBranch && !multiBranch) || !$('lBranch')) return;
     var res=STOP.data, list=(res&&res.branches)||[];
     var sel=$('lBranch'), sig=list.map(function(b){return b.key+':'+b.name+':'+(b.closed?'1':'0');}).join(',');
     if(sel.getAttribute('data-sig')!==sig){
@@ -1931,8 +1939,53 @@ function actLogStop(){
 function actLists(){
   loading(true);
   api('refreshLists',[S.rest],
-    function(){ loading(false); toast('تم تحديث قوايم الاختيار لفرع/فروع '+brandLabel(),'ok'); },
+    function(res){ loading(false); toast('تم تحديث قوائم الاختيار ('+((res&&res.lists)||0)+' فرع)','ok'); },
     function(e){ loading(false); toastErr(e); });
+}
+
+/* ============================================================
+   أدوات الصيانة (مدير النظام بس)
+   — مسح سجل العمليات / سجل الأخطاء / قوائم الاختيار
+   ============================================================ */
+function actMaintenance(kind){
+  if(!needAdmin()) return;
+  var CFG={
+    clearAudit:{title:'مسح سجل العمليات', action:'clearAuditLog', coll:'audit_logs',
+      warn:'هيتم مسح كل سجلات العمليات (Audit Log) نهائيًا — متابعة الدوام والتعديلات. الخطوة دي مينفعش تترجع.',
+      word:'امسح', btn:'مسح سجل العمليات'},
+    clearErrors:{title:'مسح سجل الأخطاء', action:'clearErrorLog', coll:'error_log',
+      warn:'هيتم مسح كل الأخطاء المسجلة (Error Log) نهائيًا. الخطوة دي مينفعش تترجع.',
+      word:'امسح', btn:'مسح سجل الأخطاء'},
+    clearLists:{title:'تفريغ قوائم الاختيار', action:'clearDropdowns', coll:'dropdown_lists',
+      warn:'هيتم تفريغ كاش قوائم الاختيار (الأصناف والأسباب لكل فرع). القوايم هتتبني تاني من أول طلب.',
+      word:'فرّغ', btn:'تفريغ القوايم'}
+  }[kind];
+  if(!CFG) return;
+
+  api('getDropdownStatus',[],function(status){
+    var extra='';
+    if(kind==='clearLists'){
+      extra='<p class="hint">قوائم الاختيار المخزّنة حاليًا: <b>'+((status&&status.count)||0)+'</b> فرع.</p>';
+    }
+    openModal(CFG.title,
+      '<p class="hint" style="color:var(--danger-ink)"><b>تحذير:</b> '+CFG.warn+'</p>'
+      +extra
+      +adminUserField('mAdmin')
+      +'<label for="mPass">كلمة سر الأدمن (تأكيد الهوية)</label><input id="mPass" type="password" autocomplete="current-password" placeholder="اكتب باسورد حسابك">'
+      +'<label for="mWord">اكتب كلمة <b>'+esc(CFG.word)+'</b> للتأكيد</label><input id="mWord" type="text" autocomplete="off" placeholder="'+esc(CFG.word)+'">',
+      CFG.btn,
+      function(){
+        if(!checkAdminUserField('mAdmin')) return;
+        var pass=$('mPass').value;
+        if(!pass){ toast('اكتب باسورد الأدمن','warn'); $('mPass').focus(); return; }
+        if($('mWord').value.trim()!==CFG.word){ toast('اكتب كلمة "'+CFG.word+'" للتأكيد','warn'); $('mWord').focus(); return; }
+        var btn=$('mSubmit'); btn.disabled=true;
+        api(CFG.action,[pass],function(res){
+          btn.disabled=false; closeModal();
+          toast('تم '+CFG.title+' — '+((res&&res.deleted)||0)+' سجل','ok');
+        },function(e){ btn.disabled=false; toastErr(e); });
+      });
+  },function(e){ toastErr(e); });
 }
 
 /* مسح كل سجلات الفروع — باسورد الأدمن + تأكيد مزدوج */
@@ -1964,6 +2017,7 @@ function actClearData(){
    إدارة المستخدمين (مانجمنت بس)
    ===================================================== */
 var ULIST=[];
+var BRPICK='';   /* الفرع المعروض في شاشة الدسباتشر (للي مربوط بأكثر من فرع) */
 function actUsers(){
   loading(true);
   api('listUsers',[],function(l){ loading(false); showUsers(l); },function(e){ loading(false); toastErr(e); });
@@ -1973,18 +2027,20 @@ function showUsers(list, creds){
   ULIST=list;
   var LBL={management:'مانجمنت',branch:'دسباتشر فرع',agent:'ايجينت'};
   var rows=list.map(function(u){
-    var userBranch=branchObj(u.branch);
     var restaurant=(D.restaurants||[]).filter(function(r){return r.id===u.restaurant;})[0];
+    var bl=(u.branches&&u.branches.length)?u.branches:(u.branch?[u.branch]:[]);
+    var branchTxt;
+    if(u.role==='management') branchTxt='—';
+    else if(!bl.length) branchTxt='—';
+    else if(bl.length===1){ var b1=branchObj(bl[0]); branchTxt=b1?b1.name:bl[0]; }
+    else branchTxt=bl.length+' فروع ('+bl.map(function(k){ var b=branchObj(k); return b?b.name:k; }).join('، ')+')';
     return '<tr><td class="it">'+esc(u.username)+'</td><td>'+esc(LBL[u.role]||u.role)+'</td>'
       +'<td>'+(u.isAdmin?'<span class="pill soft">مدير النظام</span>':'مستخدم عادي')+'</td>'
-      +'<td>'+esc(u.role==='management'?'—':(userBranch?userBranch.name:(u.branch||'—')))+'</td>'
+      +'<td>'+esc(branchTxt)+'</td>'
       +'<td>'+esc(restaurant?restaurant.name:(u.restaurant||'—'))+'</td>'
       +'<td>'+(u.active?'<span class="pill ok">نشط</span>':'<span class="pill gray">موقوف</span>')+'</td>'
       +'<td><button type="button" class="btn ghost sm" data-uedit="'+esc(u.username)+'">تعديل</button> '
       +'<button type="button" class="btn ghost sm" data-udel="'+esc(u.username)+'">حذف</button></td></tr>';
-  }).join('');
-  var bOpts='<option value="">— اختار الفرع —</option>'+D.branches.map(function(b){
-    return '<option value="'+esc(b.key)+'">'+esc((b.restaurantName?b.restaurantName+' — ':'')+b.name)+'</option>';
   }).join('');
   var restOpts=(D.restaurants||[]).map(function(r){
     return '<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>';
@@ -2000,17 +2056,17 @@ function showUsers(list, creds){
     +credsHtml
     +'<div style="margin-top:10px"><button type="button" class="btn ghost sm" id="uMake">إنشاء يوزر لكل فرع (باسورد عشوائي)</button></div>'
     +'<h3 style="margin:18px 0 0;font-size:15px" id="uFormTitle">إضافة يوزر</h3>'
-    +'<label for="uName">اسم المستخدم (إنجليزي/أرقام)</label><input id="uName" type="text" dir="ltr" autocomplete="off" maxlength="30">'
+    +'<label for="uName">اسم المستخدم (إيميل أو إنجليزي/أرقام)</label><input id="uName" type="text" dir="ltr" autocomplete="off" maxlength="30">'
     +'<label for="uPass">كلمة السر</label><input id="uPass" type="password" dir="ltr" autocomplete="new-password" placeholder="6 حروف/أرقام على الأقل">'
-    +'<label for="uRole">الدور</label><select id="uRole">'
-      +'<option value="branch">دسباتشر فرع (يسجّل إيقاف/تشغيل لفرعه)</option>'
+    +'<label for="uRole">نوع الحساب / الدور</label><select id="uRole">'
+      +'<option value="branch">دسباتشر فرع (يسجّل إيقاف/تشغيل لفروعه)</option>'
       +'<option value="agent">ايجينت (يشوف الايتمات الموقوفة والمشتغلة بس)</option>'
       +'<option value="management">مانجمنت (كل حاجة + التقارير)</option></select>'
       +'<div class="chkrow"><input id="uAdmin" type="checkbox"><label for="uAdmin" style="margin:0">مدير نظام (Admin) — صلاحيات الإدارة الكاملة</label></div>'
-      +'<label for="uRestaurant">مطعم حساب المانجمنت</label><select id="uRestaurant">'+restOpts+'</select>'
-    +'<label for="uBranch">الفرع</label><select id="uBranch">'+bOpts+'</select>'
+      +'<label for="uRestaurant">المطعم (البراند)</label><select id="uRestaurant">'+restOpts+'</select>'
+    +'<label for="uBranch">الفرع</label><select id="uBranch"></select>'
     +'<div class="chkrow"><input id="uActive" type="checkbox" checked><label for="uActive" style="margin:0">اليوزر نشط</label></div>'
-    +'<p class="hint">كل يوزر فرع أو ايجينت لازم يرتبط بفرع واحد. صلاحية مدير النظام متاحة لحسابات المانجمنت فقط.</p>',
+    +'<p class="hint">اختار المطعم الأول، وبعدين تختار فرع واحد أو "إضافة الكل" (كل فروع المطعم). المانجمنت بيشوف كل الفروع، والدسباتشر/الايجينت بيشوفوا الفروع المحدد له بس.</p>',
     'حفظ اليوزر',
     function(){
       if(!needAdmin()) return;
@@ -2023,20 +2079,41 @@ function showUsers(list, creds){
     });
   document.querySelector('#modal .dlg').classList.add('wide');
 
+  /* فروع المطعم المختار + خيار "إضافة الكل" */
+  var fillUserBranches=function(keep){
+    var rid=$('uRestaurant').value;
+    var list=(D.branches||[]).filter(function(b){ return !rid || b.restaurant===rid; });
+    var sel=$('uBranch');
+    var prev=(keep===undefined)?sel.value:keep;
+    sel.innerHTML='<option value="">— اختار الفرع —</option>'
+      +'<option value="all">＋ كل فروع المطعم (إضافة الكل)</option>'
+      +list.map(function(b){ return '<option value="'+esc(b.key)+'">'+esc(b.name)+'</option>'; }).join('');
+    if(prev==='all') sel.value='all';
+    else if(prev && list.some(function(b){return b.key===prev;})) sel.value=prev;
+    else sel.value='';
+    if($('uRole').value==='management') sel.value='';
+  };
+
   var syncRole=function(){
     var r=$('uRole').value, mg=r==='management';
-    $('uBranch').disabled=mg; $('uRestaurant').disabled=!mg;
+    $('uBranch').disabled=mg;
     $('uAdmin').disabled=!mg;
     if(!mg) $('uAdmin').checked=false;
     if(mg) $('uBranch').value='';
+    fillUserBranches();
   };
-  $('uRole').addEventListener('change',syncRole); syncRole();
+  $('uRole').addEventListener('change',syncRole);
+  $('uRestaurant').addEventListener('change',function(){ fillUserBranches(); });
+  syncRole();
 
   document.querySelectorAll('[data-uedit]').forEach(function(b){
     b.addEventListener('click',function(){
       var u=ULIST.filter(function(x){ return x.username===b.getAttribute('data-uedit'); })[0]; if(!u) return;
-      $('uName').value=u.username; $('uName').readOnly=true; $('uRole').value=u.role; $('uBranch').value=u.branch||'';
-      $('uRestaurant').value=u.restaurant||'MAIN';
+      $('uName').value=u.username; $('uName').readOnly=true; $('uRole').value=u.role;
+      $('uRestaurant').value=u.restaurant||($('uRestaurant').options[0]?$('uRestaurant').options[0].value:'');
+      /* فروع اليوزر: لو مربوط بأكثر من فرع → "إضافة الكل" */
+      var bl=(u.branches&&u.branches.length)?u.branches:(u.branch?[u.branch]:[]);
+      fillUserBranches(bl.length>1?'all':(bl[0]||''));
       $('uActive').checked=u.active; $('uAdmin').checked=!!u.isAdmin;
       $('uPass').value=''; $('uPass').placeholder='سيبه فاضي لو مش عايز تغيّر كلمة السر';
       $('uFormTitle').textContent='تعديل: '+u.username; syncRole(); $('uPass').focus();
@@ -2121,14 +2198,28 @@ function byTimeDesc(a,c){
 }
 
 function renderBranchView(){
-  var b=D.branches[0];
+  var list=D.branches||[];
+  var b=null;
+  if(list.length){
+    b=list.filter(function(x){ return x.key===BRPICK; })[0] || list[0];
+    BRPICK=b.key;
+  }
   if(!b){
     $('brHead').innerHTML='<div class="panel empty">اليوزر ده مش مربوط بفرع. كلّم المدير.</div>';
     $('brOpen').innerHTML=''; $('brRecent').innerHTML=''; return;
   }
   var sh=b.shift||{};
-  $('brHead').innerHTML='<div class="role-head"><div><h2>'+esc(b.name)+'</h2><span class="muted">🕘 '+esc(shiftText(b))+' · قفل '+esc(clock12(b.closeSec))+' · شيفت '+esc(sh.day||D.now)+'</span></div>'
+  var multi=list.length>1;
+  var picker=multi
+    ? '<label for="brPick" style="margin:0">فرعي:</label> <select id="brPick" style="width:auto;min-width:140px">'
+      +list.map(function(x){ return '<option value="'+esc(x.key)+'"'+(x.key===b.key?' selected':'')+'>'+esc(x.name)+'</option>'; }).join('')
+      +'</select>'
+    : '';
+  $('brHead').innerHTML='<div class="role-head"><div><h2>'+esc(b.name)+'</h2><span class="muted">🕘 '+esc(shiftText(b))+' · قفل '+esc(clock12(b.closeSec))+' · شيفت '+esc(sh.day||D.now)+'</span>'
+    +picker+'</div>'
     +'<button type="button" class="btn" data-do="logStop">⏸ تسجيل إيقاف ايتم</button></div>';
+  var pick=$('brPick');
+  if(pick) pick.addEventListener('change',function(){ BRPICK=this.value; renderBranchView(); });
   $('brClosed').innerHTML=b.closed?'<div class="closed-note">🔒 الفرع مقفول النهاردة حسب مواعيد العمل — تسجيل الإيقاف متوقف لحد وقت الفتح.</div>':'';
   $('brTimes').innerHTML=branchTimesCard(b.key);
 
@@ -3355,6 +3446,9 @@ document.querySelectorAll('#gearMenu button').forEach(function(b){
     else if(a==='branches') actBranches();
     else if(a==='audit') actAudit();
     else if(a==='exportAll') exportXlsx('all');
+    else if(a==='clearAudit') actMaintenance('clearAudit');
+    else if(a==='clearErrors') actMaintenance('clearErrors');
+    else if(a==='clearLists') actMaintenance('clearLists');
     else if(a==='clearData') actClearData();
   });
 });
