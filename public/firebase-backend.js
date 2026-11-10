@@ -371,8 +371,8 @@ class FirestoreBackend {
       }
       var fbUser = this.auth && this.auth.currentUser ? this.auth.currentUser : null;
       if (!fbUser) return false;
-      var res = await this._ensureProfile(fbUser, fbUser.email);
-      var profile = res.profile;
+      /* الاستعادة بتلاقي الملف الشخصي بس — إنشاء الحسابات شغل مسار الدخول */
+      var profile = this._findUserByUid(fbUser.uid) || this._findUser(fbUser.email);
       if (!profile || profile.active === false) return false;
       this.session = { user: profile, ver: profile.ver || '', uid: fbUser.uid || '' };
       return true;
@@ -487,6 +487,8 @@ class FirestoreBackend {
       }
     }
 
+    /* الملف الشخصي لازم يكون محدّث (التفعيل/الإيقاف بيتحدث من جهاز تاني) */
+    await this._reload(COL.users);
     var res = await this._ensureProfile(fbUser, username);
     var profile = res.profile;
     if (!profile) throw err('تعذر تجهيز ملف الحساب. كلّم مدير النظام.');

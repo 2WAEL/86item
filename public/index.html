@@ -872,6 +872,7 @@ function addDays(key,n){
    ===================================================== */
 /* ---------- الجلسة: كل نداء للسيرفر بيروح ومعاه التوكن، والسيرفر هو اللي بيتحقق من الدور ---------- */
 var TOKEN='';
+var LOGIN_PENDING=false;   /* أثناء تسجيل الدخول — عشان متعملش استعادة جلسة مرتين */
 try{ TOKEN=sessionStorage.getItem('sid')||''; }catch(e){}
 function saveToken(){ try{ if(TOKEN) sessionStorage.setItem('sid',TOKEN); else sessionStorage.removeItem('sid'); }catch(e){} }
 
@@ -3314,10 +3315,13 @@ $('loginForm').addEventListener('submit',function(e){
   var u=$('lgUser').value.trim(), p=$('lgPass').value;
   if(!u || !p){ $('lgErr').textContent='اكتب اسم المستخدم وكلمة السر.'; return; }
   $('lgBtn').disabled=true; $('lgErr').textContent=''; loading(true);
+  LOGIN_PENDING=true;
   FB.login(u,p).then(function(res){
+    LOGIN_PENDING=false;
     loading(false); $('lgBtn').disabled=false; $('lgPass').value='';
     TOKEN=res.token; saveToken(); onData(res.data);
   }).catch(function(err){
+    LOGIN_PENDING=false;
     loading(false); $('lgBtn').disabled=false; $('lgErr').textContent=errMsg(err);
   });
 });
@@ -3400,7 +3404,7 @@ FB.restore(TOKEN).then(function(ok){
 
 /* لو الحساب اتقفل أو اتسجل خروج من جهاز تاني → رجوع لشاشة الدخول فورًا */
 FB.onAuthChange(function(user){
-  if(user && !D){
+  if(user && !D && !LOGIN_PENDING){
     /* الجلسة اتستعيدت بعد ما الصفحة فتحت → ادخل الداشبورد */
     FB.restore(TOKEN).then(function(ok){ if(ok) load(false); });
     return;
