@@ -396,6 +396,8 @@ class FirestoreBackend {
       var fbUser = this.auth && this.auth.currentUser ? this.auth.currentUser : null;
       if (!fbUser) return false;
       /* الاستعادة بتلاقي الملف الشخصي بس — إنشاء الحسابات شغل مسار الدخول */
+      /* قراءة محدّثة للملفات الشخصية (لو اتوقّف الحساب من جهاز تاني لازم يطلع فورًا) */
+      await this._reload(COL.users);
       var profile = this._findUserByUid(fbUser.uid) || this._findUser(fbUser.email);
       if (!profile || profile.active === false) return false;
       this.session = { user: profile, ver: profile.ver || '', uid: fbUser.uid || '' };
@@ -1464,9 +1466,12 @@ class FirestoreBackend {
    *  أدوات الصيانة (مدير النظام بس)
    * ============================================================ */
 
-  /** حذف كل السجلات من مجموعة (ب batches) */
+  /**
+   * حذف كل السجلات من مجموعة (قراءة مباشرة من Firestore عشان المسح يبقى كامل 100%)
+   */
   async _wipeCollection(name) {
-    var rows = this.state[name] || [];
+    var snap = await getDocs(collection(this.db, name));
+    var rows = snap.docs.map(function (d) { var o = d.data(); o.id = d.id; return o; });
     for (var i = 0; i < rows.length; i += 400) {
       var batch = writeBatch(this.db);
       var self = this;
@@ -1479,34 +1484,43 @@ class FirestoreBackend {
     return rows.length;
   }
 
-  /** حذف سجل العمليات (audit_logs) */
+  /**
+   * حذف سجل العمليات (audit_logs) — حذف كامل: السجل بيفضل فاضي تمامًا
+   * (حتى سجل العملية نفسها بيتمسح في الآخر).
+   */
   async clearAuditLog(password) {
     var u = this._require([ROLES.MGMT]);
     if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
     await this._reauth(password);
+    /* 1) مسح كل السجلات */
     var n = await this._wipeCollection(COL.audit);
+    /* 2) تسجيل العملية (عشان الأجهزة التانية تشوفها) */
     await this._audit(u, 'AUDIT_CLEAR', 'ALL', { deleted: n }, 'OK');
-    return { ok: true, deleted: n, collection: 'audit_logs' };
+    /* 3) مسح تاني عشان السجل يفضل صفر تمامًا */
+    await this._wipeCollection(COL.audit);
+    this.rev++;
+    this._emitSoon();
+    return { ok: true, deleted: n, remaining: 0, collection: 'audit_logs' };
   }
 
-  /** حذف سجل الأخطاء (error_log) */
+  /** حذف سجل الأخطاء (error_log) — حذف كامل */
   async clearErrorLog(password) {
     var u = this._require([ROLES.MGMT]);
     if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
     await this._reauth(password);
     var n = await this._wipeCollection(COL.errors);
     await this._audit(u, 'ERRORS_CLEAR', 'ALL', { deleted: n }, 'OK');
-    return { ok: true, deleted: n, collection: 'error_log' };
+    return { ok: true, deleted: n, remaining: 0, collection: 'error_log' };
   }
 
-  /** تفريغ قوائم الاختيار (الكاش) */
+  /** تفريغ قوائم الاختيار (الكاش) — حذف كامل */
   async clearDropdowns(password) {
     var u = this._require([ROLES.MGMT]);
     if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
     await this._reauth(password);
     var n = await this._wipeCollection(COL.lists);
     await this._audit(u, 'DROPDOWNS_CLEAR', 'ALL', { deleted: n }, 'OK');
-    return { ok: true, deleted: n, collection: 'dropdown_lists' };
+    return { ok: true, deleted: n, remaining: 0, collection: 'dropdown_lists' };
   }
 
   /** حالة قوائم الاختيار (للعرض) */

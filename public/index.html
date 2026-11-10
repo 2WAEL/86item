@@ -1982,7 +1982,7 @@ function actMaintenance(kind){
         var btn=$('mSubmit'); btn.disabled=true;
         api(CFG.action,[pass],function(res){
           btn.disabled=false; closeModal();
-          toast('تم '+CFG.title+' — '+((res&&res.deleted)||0)+' سجل','ok');
+          toast('تم '+CFG.title+' — '+((res&&res.deleted)||0)+' سجل (السجل فاضي تمامًا)','ok');
         },function(e){ btn.disabled=false; toastErr(e); });
       });
   },function(e){ toastErr(e); });
