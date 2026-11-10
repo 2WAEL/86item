@@ -32,8 +32,7 @@ import {
   onSnapshot, writeBatch, arrayUnion
 } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js";
 import {
-  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
-  onAuthStateChanged, updatePassword, sendPasswordResetEmail,
+  signOut, onAuthStateChanged, updatePassword, sendPasswordResetEmail,
   EmailAuthProvider, reauthenticateWithCredential
 } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
 
@@ -203,16 +202,22 @@ class FirestoreBackend {
     if (this._hydrating) return this._hydrating;
     if (this.loaded && !force) return;
     var self = this;
+    /* المجموعات بتتقرأ بالتوازي (مش واحدة ورا واحدة) عشان الدخول يكون فوري */
     this._hydrating = this._withLock('state', async function () {
       await self.authReady.catch(function () { });
-      for (var i = 0; i < ALL_COLS.length; i++) {
-        var name = ALL_COLS[i];
-        var snap = await getDocs(collection(self.db, name));
-        self.state[name] = snap.docs.map(function (d) {
+      var lists = await Promise.all(ALL_COLS.map(function (name) {
+        return getDocs(collection(self.db, name)).then(function (snap) {
+          return { name: name, docs: snap.docs };
+        }, function () {
+          return { name: name, docs: [] };
+        });
+      }));
+      lists.forEach(function (l) {
+        self.state[l.name] = l.docs.map(function (d) {
           var o = d.data(); o.id = d.id; return o;
         });
-        self._sort(name);
-      }
+        self._sort(l.name);
+      });
       self.loaded = true;
       self.rev++;
     });
@@ -357,12 +362,9 @@ class FirestoreBackend {
   }
 
   /**
-   * تسجيل الدخول:
-   *  1) يحاول Firebase Auth (signInWithEmailAndPassword)
-   *  2) لو الحساب مش موجود أصلاً → يعمله signup بكلمة السر اللي المستخدم كتبها
-   *     (الحساب الجديد يفضل "موقوف" لحد ما الأدمن يفعّله)
+   * استعادة الجلسة من Firebase Auth (بعد تحديث الصفحة)
+   * — بتلاقي الملف الشخصي بس؛ إنشاء الحسابات شغل مسار الدخول في الواجهة
    */
-  /** استعادة الجلسة من Firebase Auth (بعد تحديث الصفحة) */
   async restore(token) {
     try {
       /* Firebase Auth بيستعيد الجلسة بشكل غير متزامن — لازم ننتظره */
@@ -442,59 +444,34 @@ class FirestoreBackend {
     return u;
   }
 
-  async login(username, password) {
-    /* كل عمليات الدخول متسلسلة (قفل) عشان ما يحصلش تكرار في سبع البذرة */
-    await this.hydrate();
-    return this._withLock('login', () => this._loginAuth(username, password));
+  /**
+   * استلام المستخدم اللي اتصادق عليه (المصادقة نفسها بتتم في الواجهة
+   * عبر signInWithEmailAndPassword) وتجهيز الملف الشخصي + الداتا.
+   * بترجع:
+   *   { ok:true, token, data }  → يكمّل للداشبورد
+   *   { blocked:true, message } → الحساب موقوف/محتاج تفعيل (مفيش داتا)
+   */
+  async adoptAuthenticatedUser(fbUser, requestedName) {
+    if (!fbUser) throw err('تعذر تسجيل الدخول. حاول تاني.');
+    return this._withLock('login', () => this._adopt(fbUser, requestedName));
   }
 
-  /* تسجيل الدخول بـ Firebase Authentication (إيميل + كلمة سر) */
-  async _loginAuth(username, password) {
-    var email = this._authEmail(username);
-    if (!email) throw err('اكتب اسم المستخدم وكلمة السر.');
-    var pass = String(password || '');
-    if (!pass) throw err('اكتب اسم المستخدم وكلمة السر.');
-
-    var fbUser = null;
-    try {
-      var cred = await signInWithEmailAndPassword(this.auth, email, pass);
-      fbUser = cred && cred.user ? cred.user : null;
-    } catch (e) {
-      var code = (e && e.code) ? String(e.code) : '';
-      if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') {
-        /* الحساب مش موجود أصلاً → ننشئه أول مرة (كلمة السر اللي المستخدم كتبها) */
-        var created = false;
-        try {
-          var cred2 = await createUserWithEmailAndPassword(this.auth, email, pass);
-          fbUser = cred2 && cred2.user ? cred2.user : null;
-          created = true;
-        } catch (e2) {
-          var c2 = (e2 && e2.code) ? String(e2.code) : '';
-          if (c2 === 'auth/email-already-in-use') {
-            await this._audit(null, 'LOGIN_FAIL', email, '', 'FAIL');
-            throw this._authError({ code: 'auth/invalid-credential' });
-          }
-          throw this._authError(e2);
-        }
-        var r0 = await this._ensureProfile(fbUser, username);
-        if (created && r0.profile && r0.profile.active === false) {
-          await this._audit(null, 'SIGNUP_PENDING', email, { role: r0.profile.role }, 'PENDING');
-          await signOut(this.auth);
-          throw err('تم إنشاء حسابك بنجاح، بس محتاج تفعيل من مدير النظام قبل ما تدخل.');
-        }
-      } else {
-        throw this._authError(e);
-      }
-    }
-
-    /* الملف الشخصي لازم يكون محدّث (التفعيل/الإيقاف بيتحدث من جهاز تاني) */
-    await this._reload(COL.users);
-    var res = await this._ensureProfile(fbUser, username);
+  async _adopt(fbUser, requestedName) {
+    /* قراءة كاملة وحديثة لكل المجموعات (بالتوازي) عشان الداتا تكون جاهزة فورًا */
+    await this.hydrate(true);
+    var res = await this._ensureProfile(fbUser, requestedName);
     var profile = res.profile;
     if (!profile) throw err('تعذر تجهيز ملف الحساب. كلّم مدير النظام.');
+
     if (profile.active === false) {
-      await signOut(this.auth);
-      throw err('حسابك موقوف. كلّم مدير النظام.');
+      await this._audit(null, 'SIGNUP_PENDING', profile.email || profile.username, { role: profile.role }, 'PENDING');
+      this.session = null;
+      return {
+        ok: false, blocked: true,
+        message: res.created
+          ? 'تم إنشاء حسابك بنجاح، بس محتاج تفعيل من مدير النظام قبل ما تدخل.'
+          : 'حسابك موقوف. كلّم مدير النظام.'
+      };
     }
 
     /* أول حساب في النظام → نعمل سبع البذرة (مطعم + فروع + أسباب + أوقات) */
@@ -505,7 +482,13 @@ class FirestoreBackend {
 
     this.session = { user: profile, ver: profile.ver || '', uid: (fbUser && fbUser.uid) || '' };
     await this._audit(profile, 'LOGIN', profile.username, { restaurant: profile.restaurant || '' }, 'OK');
-    return { token: 'auth:' + ((fbUser && fbUser.uid) || profile.username), data: this.scopedPayload('') };
+    return {
+      ok: true,
+      token: 'auth:' + ((fbUser && fbUser.uid) || profile.username),
+      username: profile.username,
+      email: profile.email || '',
+      data: this.scopedPayload('')
+    };
   }
 
   async logout() {
@@ -2260,8 +2243,11 @@ class FirestoreBackend {
   async api(action, args, token) {
     args = args || [];
     if (!this.session && token) await this.restore(token);
-    if (action === 'login') return this.login(args[0], args[1]);
+    /* تسجيل الدخول نفسه بيتم في الواجهة عبر Firebase Auth — هنا خروج بس */
     if (action === 'logout') return this.logout();
+    if (action === 'login') {
+      var le = new Error('UNKNOWN_ACTION'); le.business = true; throw le;
+    }
     if (!ACTIONS[action]) {
       var e = new Error('UNKNOWN_ACTION'); e.business = true; throw e;
     }

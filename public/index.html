@@ -585,7 +585,10 @@ details.branch .body{padding:0 18px 16px}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-analytics.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js";
-import { getAuth, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
+import {
+  getAuth, setPersistence, browserSessionPersistence,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
 import { createBackend } from "./firebase-backend.js";
 
 const firebaseConfig = {
@@ -609,6 +612,48 @@ try { setPersistence(auth, browserSessionPersistence); } catch (e) { }
 
 const FB = createBackend(db, { auth: auth, emailDomain: 'item-f8564.firebaseapp.com' });
 window.FB = FB;   /* الفحص والتصحيح من الكونسول */
+
+/* =====================================================
+   أدوات تسجيل الدخول (Firebase Authentication)
+   ===================================================== */
+/* المستخدم ممكن يكتب الإيميل كامل، أو الاسم بس (بنضيف دومين المشروع) */
+function authEmail(input){
+  var v=String(input||'').trim().toLowerCase();
+  if(!v) return '';
+  if(v.indexOf('@')>=0) return v;
+  return v+'@item-f8564.firebaseapp.com';
+}
+/* أخطاء Firebase اللي معناها "الحساب مش موجود" (مش كلمة سر غلط) */
+function isUnknownAccount(e){
+  var c=(e && e.code)?String(e.code):'';
+  return c==='auth/user-not-found'||c==='auth/invalid-credential'||c==='auth/wrong-password';
+}
+function isEmailInUse(e){
+  return (e && e.code)==='auth/email-already-in-use';
+}
+/* رسائل أخطاء Firebase Auth بالعربي */
+function authErrorMessage(e){
+  var code=(e && e.code)?String(e.code):'';
+  var map={
+    'auth/invalid-credential':'اسم المستخدم أو كلمة السر غلط.',
+    'auth/user-not-found':'اسم المستخدم أو كلمة السر غلط.',
+    'auth/wrong-password':'اسم المستخدم أو كلمة السر غلط.',
+    'auth/invalid-email':'الإيميل مش صالح.',
+    'auth/email-already-in-use':'الحساب ده موجود بالفعل.',
+    'auth/weak-password':'كلمة السر ضعيفة — لازم 6 حروف على الأقل.',
+    'auth/too-many-requests':'محاولات كتير في وقت قصير. استنى شوية وجرّب تاني.',
+    'auth/network-request-failed':'تعذر الاتصال بالإنترنت. حاول تاني.',
+    'auth/user-disabled':'الحساب ده موقوف. كلّم مدير النظام.',
+    'auth/operation-not-allowed':'تسجيل الدخول بالإيميل مش مفعّل. من Firebase Console: Authentication ▸ Sign-in method ▸ Email/Password ▸ Enable.',
+    'auth/configuration-not-found':'Firebase Authentication مش مهيّأ في المشروع. فعّل Email/Password من الـ Console.',
+    'auth/popup-closed-by-user':'تم إغلاق النافذة.',
+    'auth/captcha-check-failed':'فشل التحقق. حاول تاني.'
+  };
+  if(map[code]) return map[code];
+  var raw=(e && e.message)?String(e.message):'';
+  if(raw && /[\u0600-\u06FF]/.test(raw)) return raw;
+  return 'تعذر تسجيل الدخول. حاول تاني.';
+}
 
 /* =====================================================
    الحالة العامة
@@ -3308,21 +3353,55 @@ document.querySelectorAll('#gearMenu button').forEach(function(b){
   });
 });
 
-/* تسجيل الدخول / الخروج — عبر Firebase Authentication */
+/* ============================================================
+ *  تسجيل الدخول — Firebase Authentication مباشرة
+ *  signInWithEmailAndPassword → (أول مرة) createUserWithEmailAndPassword
+ *  → تجهيز الملف الشخصي في Firestore → دخول لوحة التحكم فورًا
+ * ============================================================ */
 $('loginForm').addEventListener('submit',function(e){
   e.preventDefault();
   unlockNotificationAudio();
   var u=$('lgUser').value.trim(), p=$('lgPass').value;
   if(!u || !p){ $('lgErr').textContent='اكتب اسم المستخدم وكلمة السر.'; return; }
+  var email=authEmail(u);
+  if(!email){ $('lgErr').textContent='اكتب اسم المستخدم وكلمة السر.'; return; }
+
   $('lgBtn').disabled=true; $('lgErr').textContent=''; loading(true);
   LOGIN_PENDING=true;
-  FB.login(u,p).then(function(res){
+
+  /* 1) مصادقة Firebase Auth */
+  var fbUser=null, isNew=false;
+  signInWithEmailAndPassword(auth, email, p).then(function(cred){
+    fbUser=cred && cred.user ? cred.user : null;
+  }).catch(function(err){
+    /* الحساب مش موجود → ننشئه أول مرة بنفس الباسورد */
+    if(!isUnknownAccount(err)) throw err;
+    return createUserWithEmailAndPassword(auth, email, p).then(function(cred){
+      fbUser=cred && cred.user ? cred.user : null;
+      isNew=true;
+    }).catch(function(err2){
+      if(isEmailInUse(err2)){ var w=new Error('اسم المستخدم أو كلمة السر غلط.'); w.code='auth/invalid-credential'; throw w; }
+      throw err2;
+    });
+  }).then(function(){
+    /* 2) الملف الشخصي + البذرة + الداتا (من Firestore) */
+    return FB.adoptAuthenticatedUser(fbUser, u);
+  }).then(function(res){
     LOGIN_PENDING=false;
     loading(false); $('lgBtn').disabled=false; $('lgPass').value='';
-    TOKEN=res.token; saveToken(); onData(res.data);
+    if(!res || res.blocked){
+      /* الحساب موقوف أو محتاج تفعيل → نخرج من الجلسة ونشرح السبب */
+      try{ signOut(auth); }catch(e){}
+      $('lgErr').textContent=(res && res.message) ? res.message : 'حسابك موقوف. كلّم مدير النظام.';
+      return;
+    }
+    /* 3) دخول لوحة التحكم فورًا */
+    TOKEN=res.token||''; saveToken();
+    onData(res.data);
   }).catch(function(err){
     LOGIN_PENDING=false;
-    loading(false); $('lgBtn').disabled=false; $('lgErr').textContent=errMsg(err);
+    loading(false); $('lgBtn').disabled=false;
+    $('lgErr').textContent=authErrorMessage(err);
   });
 });
 $('logoutBtn').addEventListener('click',function(){
