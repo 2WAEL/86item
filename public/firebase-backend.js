@@ -1485,41 +1485,37 @@ class FirestoreBackend {
   }
 
   /**
-   * حذف سجل العمليات (audit_logs) — حذف كامل: السجل بيفضل فاضي تمامًا
-   * (حتى سجل العملية نفسها بيتمسح في الآخر).
+   * حذف سجل العمليات (audit_logs) — إلغاء نهائي: السجل بيفضل **صفر** ما فيش أثر.
    */
   async clearAuditLog(password) {
     var u = this._require([ROLES.MGMT]);
     if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
     await this._reauth(password);
-    /* 1) مسح كل السجلات */
     var n = await this._wipeCollection(COL.audit);
-    /* 2) تسجيل العملية (عشان الأجهزة التانية تشوفها) */
-    await this._audit(u, 'AUDIT_CLEAR', 'ALL', { deleted: n }, 'OK');
-    /* 3) مسح تاني عشان السجل يفضل صفر تمامًا */
-    await this._wipeCollection(COL.audit);
     this.rev++;
     this._emitSoon();
     return { ok: true, deleted: n, remaining: 0, collection: 'audit_logs' };
   }
 
-  /** حذف سجل الأخطاء (error_log) — حذف كامل */
+  /** حذف سجل الأخطاء (error_log) — إلغاء نهائي: صفر ومن غير أي سجل جديد */
   async clearErrorLog(password) {
     var u = this._require([ROLES.MGMT]);
     if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
     await this._reauth(password);
     var n = await this._wipeCollection(COL.errors);
-    await this._audit(u, 'ERRORS_CLEAR', 'ALL', { deleted: n }, 'OK');
+    this.rev++;
+    this._emitSoon();
     return { ok: true, deleted: n, remaining: 0, collection: 'error_log' };
   }
 
-  /** تفريغ قوائم الاختيار (الكاش) — حذف كامل */
+  /** تفريغ قوائم الاختيار (الكاش) — إلغاء نهائي: صفر ومن غير أي سجل جديد */
   async clearDropdowns(password) {
     var u = this._require([ROLES.MGMT]);
     if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
     await this._reauth(password);
     var n = await this._wipeCollection(COL.lists);
-    await this._audit(u, 'DROPDOWNS_CLEAR', 'ALL', { deleted: n }, 'OK');
+    this.rev++;
+    this._emitSoon();
     return { ok: true, deleted: n, remaining: 0, collection: 'dropdown_lists' };
   }
 

@@ -1951,13 +1951,13 @@ function actMaintenance(kind){
   if(!needAdmin()) return;
   var CFG={
     clearAudit:{title:'مسح سجل العمليات', action:'clearAuditLog', coll:'audit_logs',
-      warn:'هيتم مسح كل سجلات العمليات (Audit Log) نهائيًا — متابعة الدوام والتعديلات. الخطوة دي مينفعش تترجع.',
+      warn:'هيتم إلغاء سجل العمليات (Audit Log) نهائيًا — متابعة الدوام والتعديلات. الإلغاء نهائي ومش رجعة.',
       word:'امسح', btn:'مسح سجل العمليات'},
     clearErrors:{title:'مسح سجل الأخطاء', action:'clearErrorLog', coll:'error_log',
-      warn:'هيتم مسح كل الأخطاء المسجلة (Error Log) نهائيًا. الخطوة دي مينفعش تترجع.',
+      warn:'هيتم إلغاء سجل الأخطاء (Error Log) نهائيًا. الإلغاء نهائي ومش رجعة.',
       word:'امسح', btn:'مسح سجل الأخطاء'},
     clearLists:{title:'تفريغ قوائم الاختيار', action:'clearDropdowns', coll:'dropdown_lists',
-      warn:'هيتم تفريغ كاش قوائم الاختيار (الأصناف والأسباب لكل فرع). القوايم هتتبني تاني من أول طلب.',
+      warn:'هيتم إلغاء كاش قوائم الاختيار (الأصناف والأسباب لكل فرع) نهائيًا. القوايم هتتبني تاني من أول طلب.',
       word:'فرّغ', btn:'تفريغ القوايم'}
   }[kind];
   if(!CFG) return;
@@ -1982,7 +1982,7 @@ function actMaintenance(kind){
         var btn=$('mSubmit'); btn.disabled=true;
         api(CFG.action,[pass],function(res){
           btn.disabled=false; closeModal();
-          toast('تم '+CFG.title+' — '+((res&&res.deleted)||0)+' سجل (السجل فاضي تمامًا)','ok');
+          toast('تم الإلغاء النهائي — '+((res&&res.deleted)||0)+' سجل (السجل بقى صفر)','ok');
         },function(e){ btn.disabled=false; toastErr(e); });
       });
   },function(e){ toastErr(e); });
