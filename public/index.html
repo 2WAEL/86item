@@ -382,11 +382,6 @@ details.branch .body{padding:0 18px 16px}
         <button data-act="audit" data-roles="management">🧾 سجل العمليات (Audit)</button>
         <button data-act="errors" data-roles="management">🛠️ سجل الأخطاء</button>
         <button data-act="exportAll" data-roles="management">⬇ تصدير كل التقارير (Excel)</button>
-        <button data-act="lists" data-roles="management">🧩 تحديث قوائم الاختيار</button>
-        <hr data-roles="management">
-        <button data-act="clearAudit" data-roles="management" class="danger">🗑️ مسح سجل العمليات</button>
-        <button data-act="clearErrors" data-roles="management" class="danger">🗑️ مسح سجل الأخطاء</button>
-        <button data-act="clearLists" data-roles="management" class="danger">🗑️ تفريغ قوائم الاختيار</button>
         <hr data-roles="management">
         <button data-act="clearData" data-roles="management" class="danger">🧨 مسح كل الداتا</button>
       </div>
@@ -1936,58 +1931,6 @@ function actLogStop(){
   loadBrand(rid0);
 }
 
-function actLists(){
-  loading(true);
-  api('refreshLists',[S.rest],
-    function(res){ loading(false); toast('تم تحديث قوائم الاختيار ('+((res&&res.lists)||0)+' فرع)','ok'); },
-    function(e){ loading(false); toastErr(e); });
-}
-
-/* ============================================================
-   أدوات الصيانة (مدير النظام بس)
-   — مسح سجل العمليات / سجل الأخطاء / قوائم الاختيار
-   ============================================================ */
-function actMaintenance(kind){
-  if(!needAdmin()) return;
-  var CFG={
-    clearAudit:{title:'مسح سجل العمليات', action:'clearAuditLog', coll:'audit_logs',
-      warn:'هيتم إلغاء سجل العمليات (Audit Log) نهائيًا — متابعة الدوام والتعديلات. الإلغاء نهائي ومش رجعة.',
-      word:'امسح', btn:'مسح سجل العمليات'},
-    clearErrors:{title:'مسح سجل الأخطاء', action:'clearErrorLog', coll:'error_log',
-      warn:'هيتم إلغاء سجل الأخطاء (Error Log) نهائيًا. الإلغاء نهائي ومش رجعة.',
-      word:'امسح', btn:'مسح سجل الأخطاء'},
-    clearLists:{title:'تفريغ قوائم الاختيار', action:'clearDropdowns', coll:'dropdown_lists',
-      warn:'هيتم إلغاء كاش قوائم الاختيار (الأصناف والأسباب لكل فرع) نهائيًا. القوايم هتتبني تاني من أول طلب.',
-      word:'فرّغ', btn:'تفريغ القوايم'}
-  }[kind];
-  if(!CFG) return;
-
-  api('getDropdownStatus',[],function(status){
-    var extra='';
-    if(kind==='clearLists'){
-      extra='<p class="hint">قوائم الاختيار المخزّنة حاليًا: <b>'+((status&&status.count)||0)+'</b> فرع.</p>';
-    }
-    openModal(CFG.title,
-      '<p class="hint" style="color:var(--danger-ink)"><b>تحذير:</b> '+CFG.warn+'</p>'
-      +extra
-      +adminUserField('mAdmin')
-      +'<label for="mPass">كلمة سر الأدمن (تأكيد الهوية)</label><input id="mPass" type="password" autocomplete="current-password" placeholder="اكتب باسورد حسابك">'
-      +'<label for="mWord">اكتب كلمة <b>'+esc(CFG.word)+'</b> للتأكيد</label><input id="mWord" type="text" autocomplete="off" placeholder="'+esc(CFG.word)+'">',
-      CFG.btn,
-      function(){
-        if(!checkAdminUserField('mAdmin')) return;
-        var pass=$('mPass').value;
-        if(!pass){ toast('اكتب باسورد الأدمن','warn'); $('mPass').focus(); return; }
-        if($('mWord').value.trim()!==CFG.word){ toast('اكتب كلمة "'+CFG.word+'" للتأكيد','warn'); $('mWord').focus(); return; }
-        var btn=$('mSubmit'); btn.disabled=true;
-        api(CFG.action,[pass],function(res){
-          btn.disabled=false; closeModal();
-          toast('تم الإلغاء النهائي — '+((res&&res.deleted)||0)+' سجل (السجل بقى صفر)','ok');
-        },function(e){ btn.disabled=false; toastErr(e); });
-      });
-  },function(e){ toastErr(e); });
-}
-
 /* مسح كل سجلات الفروع — باسورد الأدمن + تأكيد مزدوج */
 function actClearData(){
   if(!needAdmin()) return;
@@ -3436,7 +3379,6 @@ document.querySelectorAll('#gearMenu button').forEach(function(b){
     var a=b.getAttribute('data-act');
     if(a==='fetch') load(true);
     else if(a==='logStop') actLogStop();
-    else if(a==='lists') actLists();
     else if(a==='restaurants') actRestaurants();
     else if(a==='menu') actMenu();
     else if(a==='reasons') actReasons();
@@ -3446,9 +3388,6 @@ document.querySelectorAll('#gearMenu button').forEach(function(b){
     else if(a==='branches') actBranches();
     else if(a==='audit') actAudit();
     else if(a==='exportAll') exportXlsx('all');
-    else if(a==='clearAudit') actMaintenance('clearAudit');
-    else if(a==='clearErrors') actMaintenance('clearErrors');
-    else if(a==='clearLists') actMaintenance('clearLists');
     else if(a==='clearData') actClearData();
   });
 });

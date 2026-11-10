@@ -101,29 +101,6 @@ Authentication → Sign-in method → Email/Password → Enable
 
 ---
 
-## 4.1) أدوات الصيانة (لمدير النظام)
-
-من ⚙️ (الأيقونة) →-items الأدمن:
-
-| الأداة | الوظيفة |
-|---|---|
-| **🗑️ مسح سجل العمليات** | إلغاء نهائي لسجل `audit_logs` — السجل بيبقى **صفر** ومن غير أي سجل جديد. |
-| **🗑️ مسح سجل الأخطاء** | إلغاء نهائي لسجل `error_log` — **صفر** ومن غير أي سجل جديد. |
-| **🗑️ تفريغ قوائم الاختيار** | إلغاء نهائي لكاش `dropdown_lists` — **صفر**. القوايم بتتبني تاني من أول طلب. |
-| **🧩 تحديث قوائم الاختيار** | يبني/يحدّث الكاش من جديد (من غير مسح). |
-
-كل عملية محمية **بثلاث حاجات**: صلاحية مدير النظام + كتابة اسم مدير النظام + **كلمة سر الأدمن**
-(إعادة تأكيد هوية عبر Firebase Auth) + **كتابة كلمة تأكيد** ("امسح" / "فرّغ").
-
-> **الإلغاء نهائي 100%:** المسح بيقرأ السجلات مباشرة من Firestore ويمسحها بالكامل،
-> و**مش بيسجّل أي عملية مسح** في السجلات — فالسجل بيفضل صفر وما بيترجعش أي أثر.
-> (لو في يوم عايز أثر للعملية، أضف سطر `_audit(...)` جوه دالة المسح في `firebase-backend.js`.)
-
-> ⚠️ `dropdown_lists` محتاجة القواعد المحدثة:
-> `firebase deploy --only firestore:rules` (المجموعة added في `firestore.rules`).
-
----
-
 ## 5) مجموعات Firestore
 
 | Collection | المحتوى |
@@ -135,7 +112,6 @@ Authentication → Sign-in method → Email/Password → Enable
 | `item_stoppages` | سجلات الإيقاف: `{ date, item, itemKey, stopSec, startSec, reason, note, restaurant, branch, branchName, open, seq }` |
 | `branch_times` | أوقات التحضير/التوصيل (سجل تاريخي): `{ branch, restaurant, prepMin, delMin, by, at, seq }` |
 | `users` | الملفات الشخصية: `{ username, usernameKey, email, uid, role, branch, branches[], restaurant, isAdmin, active, ver }` |
-| `dropdown_lists` | كاش قوائم الاختيار: `{ restaurant, branch, items[], reasons[], at, by }` (بيتحدّث تلقائيًا) |
 | `audit_logs` | سجل العمليات: `{ at, by, role, action, target, details, result, ref }` |
 | `notifications` | الإشعارات: `{ at, restaurant, branch, roles, targetUser, title, body, kind, severity, readBy[] }` |
 | `shift_log` | ترحيل الشيفت: `{ at, branch, day, open, close, stops, closed, actor, note }` |
