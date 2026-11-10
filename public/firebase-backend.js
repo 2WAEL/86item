@@ -47,7 +47,8 @@ const COL = {
   audit: 'audit_logs',
   notif: 'notifications',
   shift: 'shift_log',
-  errors: 'error_log'
+  errors: 'error_log',
+  lists: 'dropdown_lists'
 };
 const ALL_COLS = Object.keys(COL).map(function (k) { return COL[k]; });
 
@@ -1364,7 +1365,9 @@ class FirestoreBackend {
     var scoped = this.isGlobal(u) && !!restaurant;
     var allowed = this._allowedBranches(u, rid, scoped);
 
-    var branches = allowed.map(function (b) {
+    var branches = [];
+    for (var i = 0; i < allowed.length; i++) {
+      var b = allowed[i];
       var si = self.shiftInfo(b, now);
       var stopped = [], seen = {};
       self._openStops(b.key).forEach(function (s) {
@@ -1372,15 +1375,25 @@ class FirestoreBackend {
         if (!it || seen[keyOf(it)]) return;
         seen[keyOf(it)] = 1; stopped.push(it);
       });
-      return {
+      /* قوائم الاختيار: من الكاش لو طازة، وإلا من الداتا (ونحدّث الكاش) */
+      var dl = await self._dropdownFor(b);
+      if (!dl.cached) {
+        try {
+          await setDoc(doc(self.db, COL.lists, self._listId(b.restaurant, b.key)), {
+            restaurant: b.restaurant, branch: b.key, branchName: b.name,
+            items: dl.items, reasons: dl.reasons,
+            at: nowIso(), updatedAt: nowIso(), by: u.username
+          });
+        } catch (e) { /* الكاش اختياري */ }
+      }
+      branches.push({
         key: b.key, name: b.name, restaurant: b.restaurant,
         brandName: self.brandName(b.restaurant),
         closed: !si.openNow, open: fmtHMS(si.openSec), close: fmtHMS(si.closeSec),
-        items: self.menuForBranch(b.restaurant, b.key).map(function (x) { return x.it; }),
-        reasons: self.reasonsForBranch(b.restaurant, b.key),
+        items: dl.items, reasons: dl.reasons,
         stopped: stopped
-      };
-    });
+      });
+    }
 
     var brands = this.state[COL.restaurants].filter(function (r) {
       return r.active !== false && (self.isGlobal(u) || same(r.id, rid));
@@ -1389,6 +1402,137 @@ class FirestoreBackend {
     return {
       ok: true, restaurant: rid, restaurantName: this.brandName(rid),
       brands: brands, branches: branches
+    };
+  }
+
+  /**
+   * قوائم الاختيار (الكاش): الأصناف والأسباب لكل فرع — بتتسجل مرة واحدة
+   * وتتفrefresh من غير ما نحسبهم في كل مرة.
+   */
+  _listId(restaurant, branchKey) {
+    return String(restaurant || '') + '|' + String(branchKey || '');
+  }
+
+  /** محتوى قائمة الاختيار لفرع واحد (من الكاش لو الطازة، وإلا من الداتا) */
+  async _dropdownFor(rec) {
+    var id = this._listId(rec.restaurant, rec.key);
+    var cached = this.state[COL.lists].filter(function (x) { return x.id === id; })[0];
+    var fresh = cached && cached.at && (Date.now() - Date.parse(cached.at.replace(' ', 'T')) < 5 * 60 * 1000);
+    if (fresh && Array.isArray(cached.items) && Array.isArray(cached.reasons)) {
+      return { items: cached.items, reasons: cached.reasons, cached: true };
+    }
+    var items = this.menuForBranch(rec.restaurant, rec.key).map(function (x) { return x.it; });
+    var reasons = this.reasonsForBranch(rec.restaurant, rec.key);
+    return { items: items, reasons: reasons, cached: false };
+  }
+
+  /** يبني/يحدّث كاش قوائم الاختيار لمطعم (أو لكل المطاعم) */
+  async _rebuildDropdownCache(restaurant) {
+    var me = this.session && this.session.user;
+    var self = this;
+    var recs = this.state[COL.branches].filter(function (b) {
+      if (b.active === false) return false;
+      if (restaurant && !same(b.restaurant, restaurant)) return false;
+      return true;
+    });
+    var written = 0;
+    for (var i = 0; i < recs.length; i++) {
+      var rec = recs[i];
+      var items = self.menuForBranch(rec.restaurant, rec.key).map(function (x) { return x.it; });
+      var reasons = self.reasonsForBranch(rec.restaurant, rec.key);
+      await setDoc(doc(self.db, COL.lists, self._listId(rec.restaurant, rec.key)), {
+        restaurant: rec.restaurant, branch: rec.key, branchName: rec.name,
+        items: items, reasons: reasons,
+        at: nowIso(), updatedAt: nowIso(), by: me ? me.username : 'system'
+      });
+      written++;
+    }
+    await this._reload(COL.lists);
+    return written;
+  }
+
+  /** تحديث قوائم الاختيار (من غير مسح) */
+  async refreshLists(restaurant) {
+    var u = this._require([ROLES.MGMT]);
+    await this.hydrate(true);
+    var rid = restaurant ? this.resolveRestaurant(u, restaurant) : '';
+    var n = await this._rebuildDropdownCache(rid);
+    this.rev++;
+    this._emitSoon();
+    return { ok: true, lists: n, data: this.scopedPayload(restaurant || '') };
+  }
+
+  /* ============================================================
+   *  أدوات الصيانة (مدير النظام بس)
+   * ============================================================ */
+
+  /**
+   * حذف كل السجلات من مجموعة (قراءة مباشرة من Firestore عشان المسح يبقى كامل 100%)
+   */
+  async _wipeCollection(name) {
+    var snap = await getDocs(collection(this.db, name));
+    var rows = snap.docs.map(function (d) { var o = d.data(); o.id = d.id; return o; });
+    for (var i = 0; i < rows.length; i += 400) {
+      var batch = writeBatch(this.db);
+      var self = this;
+      rows.slice(i, i + 400).forEach(function (r) { batch.delete(doc(self.db, name, r.id)); });
+      await batch.commit();
+    }
+    await this._reload(name);
+    this.rev++;
+    this._emitSoon();
+    return rows.length;
+  }
+
+  /**
+   * حذف سجل العمليات (audit_logs) — إلغاء نهائي: السجل بيفضل **صفر** ما فيش أثر.
+   */
+  async clearAuditLog(password) {
+    var u = this._require([ROLES.MGMT]);
+    if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
+    await this._reauth(password);
+    var n = await this._wipeCollection(COL.audit);
+    this.rev++;
+    this._emitSoon();
+    return { ok: true, deleted: n, remaining: 0, collection: 'audit_logs' };
+  }
+
+  /** حذف سجل الأخطاء (error_log) — إلغاء نهائي: صفر ومن غير أي سجل جديد */
+  async clearErrorLog(password) {
+    var u = this._require([ROLES.MGMT]);
+    if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
+    await this._reauth(password);
+    var n = await this._wipeCollection(COL.errors);
+    this.rev++;
+    this._emitSoon();
+    return { ok: true, deleted: n, remaining: 0, collection: 'error_log' };
+  }
+
+  /** تفريغ قوائم الاختيار (الكاش) — إلغاء نهائي: صفر ومن غير أي سجل جديد */
+  async clearDropdowns(password) {
+    var u = this._require([ROLES.MGMT]);
+    if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
+    await this._reauth(password);
+    var n = await this._wipeCollection(COL.lists);
+    this.rev++;
+    this._emitSoon();
+    return { ok: true, deleted: n, remaining: 0, collection: 'dropdown_lists' };
+  }
+
+  /** حالة قوائم الاختيار (للعرض) */
+  async getDropdownStatus() {
+    this._require([ROLES.MGMT]);
+    await this.hydrate();
+    return {
+      ok: true,
+      count: this.state[COL.lists].length,
+      lists: this.state[COL.lists].slice(0, 100).map(function (x) {
+        return {
+          id: x.id, restaurant: x.restaurant, branch: x.branch,
+          items: (x.items || []).length, reasons: (x.reasons || []).length,
+          at: x.at || ''
+        };
+      })
     };
   }
 
@@ -1679,6 +1823,10 @@ class FirestoreBackend {
       users[k].branches = newList; users[k].branch = patch.branch;
       users[k].active = false;
     }
+
+    /* كاش قوائم الاختيار للفرع المحذوف */
+    var listId = this._listId(b.restaurant, b.key);
+    try { await deleteDoc(doc(this.db, COL.lists, listId)); } catch (e) { }
 
     await deleteDoc(doc(this.db, COL.branches, b.key));
     this.state[COL.branches] = this.state[COL.branches].filter(function (x) { return x.id !== b.key && x.key !== b.key; });
@@ -2340,6 +2488,7 @@ const ACTIONS = {
   logStop: 'logStop',
   resumeStop: 'resumeStop',
   getStopOptions: 'getStopOptions',
+  refreshLists: 'refreshLists',
   clearAllData: 'clearAllData',
   listUsers: 'listUsers',
   saveUser: 'saveUser',
@@ -2348,6 +2497,10 @@ const ACTIONS = {
   deleteUser: 'deleteUser',
   getAuditLog: 'getAuditLog',
   getErrorLog: 'getErrorLog',
+  clearAuditLog: 'clearAuditLog',
+  clearErrorLog: 'clearErrorLog',
+  clearDropdowns: 'clearDropdowns',
+  getDropdownStatus: 'getDropdownStatus',
   branchDeleteInfo: 'branchDeleteInfo',
   deleteBranch: 'deleteBranch',
   createBranch: 'createBranch',
