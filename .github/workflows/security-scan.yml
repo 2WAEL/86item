@@ -1,0 +1,31 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  secrets:
+    name: No secrets in client code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: فحص الأسرار في ملفات الواجهة
+        run: node scripts/check-no-secrets.mjs
+
+  rules:
+    name: Firestore rules sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: القواعد لازم تقفل كل collection بالمcatch-all
+        run: |
+          set -e
+          grep -q "match /{document=\*\*}" firestore.rules || { echo "✗ لازم في deny-by-default"; exit 1; }
+          grep -q "allow read, write: if false" firestore.rules || { echo "✗ لازم deny-by-default"; exit 1; }
+          grep -q "request.auth != null" firestore.rules || { echo "✗ لازم تحقق من المصادقة"; exit 1; }
+          echo "✓ القواعد محصّنة بشكل أساسي"

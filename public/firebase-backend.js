@@ -47,9 +47,12 @@ const COL = {
   audit: 'audit_logs',
   notif: 'notifications',
   shift: 'shift_log',
-  errors: 'error_log'
+  errors: 'error_log',
+  system: 'system'
 };
-const ALL_COLS = Object.keys(COL).map(function (k) { return COL[k]; });
+/* المجموعات اللي التطبيق بيقرأ منها ويشترك فيها (نظام التهيئة مش منها) */
+const ALL_COLS = Object.keys(COL).filter(function (k) { return k !== 'system'; })
+  .map(function (k) { return COL[k]; });
 
 const TZ = 'Africa/Cairo';
 const UNSPEC = 'غير محدد';
@@ -313,6 +316,19 @@ class FirestoreBackend {
    *  باسورد — كلمات السر كلها متmanageة من Firebase Auth.
    * ------------------------------------------------------------------ */
 
+  /**
+   * يتحقق إن الإيميل شكله صحيح (Firebase Auth بيرفض الحاجات الغلط،
+   * لكن إحنا بنتحقق قبل كده عشان ندي رسالة واضحة ومنع المدخلات الغريبة).
+   */
+  _isValidEmail(v) {
+    if (!v || v.length > 254) return false;
+    /* يسمح بالحروف والأرقام والنقطة والشرطة والـ underscore والـ + قبل @ */
+    if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(v)) return false;
+    if (v.indexOf('..') >= 0) return false;
+    if (v.charAt(0) === '.' || v.charAt(v.length - 1) === '.') return false;
+    return true;
+  }
+
   /** يحوّل اللي بيكتبه المستخدم لإيميل صالح لـ Firebase Auth */
   _authEmail(input) {
     var v = cleanText(input, 120).toLowerCase();
@@ -356,10 +372,13 @@ class FirestoreBackend {
     var email = String((fbUser && fbUser.email) || '').toLowerCase();
     var existing = email ? this._findUser(email) : null;
     if (existing) {
-      /* لو الـ uid اتغيّر (حساب اتعمل من جديد بنفس الإيميل) نحدّثه */
+      /* لو الـ uid اتغيّر (حساب اتعمل من جديد بنفس الإيميل) نحدّثه
+         — ده حق مساعدي، فأي رفض من القواعد ما بيوقفش الدخول */
       if (fbUser && fbUser.uid && existing.uid !== fbUser.uid) {
-        await updateDoc(doc(this.db, COL.users, existing.id), { uid: fbUser.uid, updatedAt: nowIso() });
-        existing.uid = fbUser.uid;
+        try {
+          await updateDoc(doc(this.db, COL.users, existing.id), { uid: fbUser.uid, updatedAt: nowIso() });
+          existing.uid = fbUser.uid;
+        } catch (e) { /* القواعد ما سمحتش — مش مهم */ }
       }
       return { profile: existing, created: false };
     }
@@ -367,14 +386,43 @@ class FirestoreBackend {
     /* أول حساب في النظام كله → مدير النظام */
     var isFirst = !this.state[COL.users].length;
     var name = norm(requestedName) || this._displayName(email);
+    if (!this._isValidEmail(email)) throw err('الإيميل مش صالح. استخدم إيميل صحيح زي name@example.com.');
+    if (!/^[A-Za-z0-9_.-]{2,30}$/.test(name)) throw err('اسم المستخدم لازم يكون حروف/أرقام إنجليزي (2–30).');
+
+    var uid = (fbUser && fbUser.uid) || '';
+    var docId = keyOf(email) || keyOf(name);
+
+    if (isFirst) {
+      /* أول حساب: بناخد قفل التهيئة (أول واحد بس ياخده) ونعمله ملف مدير نظام.
+         لو القفل اتاخد قبل كده → الحساب بيتعمل عادي وموقوف زي أي حد. */
+      try {
+        await setDoc(doc(this.db, COL.system, 'adminLock'), {
+          uid: uid, email: email, at: nowIso()
+        });
+      } catch (e) { /* القفل موجود → هنكمل بحساب عادي */ }
+      try {
+        await setDoc(doc(this.db, COL.users, docId), {
+          username: name, usernameKey: keyOf(name), email: email, uid: uid,
+          role: ROLES.MGMT, branch: '', branches: [], restaurant: '', isAdmin: true,
+          active: true, ver: this._randHex(8),
+          createdAt: nowIso(), createdBy: 'auth', seq: Date.now()
+        });
+        await this._reload(COL.users);
+        return { profile: this._findUser(email) || this._findUser(name), created: true, isFirst: true };
+      } catch (e) {
+        /* القواعد رفضت (يعني القفل مش ملكنا) → حساب عادي موقوف */
+        isFirst = false;
+      }
+    }
+
+    /* حساب عادي: دور agent + موقوف لحد ما الأدمن يفعّله */
     var data = {
-      username: name, usernameKey: keyOf(name), email: email, uid: (fbUser && fbUser.uid) || '',
-      role: isFirst ? ROLES.MGMT : ROLES.AGENT,
-      branch: '', restaurant: '', isAdmin: !!isFirst,
-      active: !!isFirst, ver: this._randHex(8),
+      username: name, usernameKey: keyOf(name), email: email, uid: uid,
+      role: ROLES.AGENT, branch: '', branches: [], restaurant: '', isAdmin: false,
+      active: false, ver: this._randHex(8),
       createdAt: nowIso(), createdBy: 'auth', seq: Date.now()
     };
-    await setDoc(doc(this.db, COL.users, keyOf(email) || keyOf(name)), data).catch(function (e) {
+    await setDoc(doc(this.db, COL.users, docId), data).catch(function (e) {
       /* أشهر خطأ هنا: القواعد بتمنع الكتابة في users */
       throw fsError(e, 'إنشاء ملف الحساب') || e;
     });
@@ -440,6 +488,22 @@ class FirestoreBackend {
     }
     await this._audit(u, 'PASSWORD_CHANGE', u.username, '', 'OK');
     return { ok: true };
+  }
+
+  /**
+   * فحص سريع للصلاحية — بتستدعيه الواجهة كل دقيقة للتأكد إن
+   * الحساب لسه نشط ولسه متاح (لو اتوقّف من جهاز تاني يخرج فورًا).
+   */
+  async checkSession() {
+    var u = this._require();
+    return {
+      ok: true,
+      username: u.username,
+      role: u.role,
+      isAdmin: !!u.isAdmin,
+      branches: Array.isArray(u.branches) ? u.branches : [],
+      restaurant: u.restaurant || ''
+    };
   }
 
   _userContext(record) {
@@ -2348,6 +2412,7 @@ const ACTIONS = {
   deleteUser: 'deleteUser',
   getAuditLog: 'getAuditLog',
   getErrorLog: 'getErrorLog',
+  checkSession: 'checkSession',
   branchDeleteInfo: 'branchDeleteInfo',
   deleteBranch: 'deleteBranch',
   createBranch: 'createBranch',

@@ -1,60 +1,219 @@
 rules_version = '2';
 
 /*
-  قواعد Firestore لمشروع item-f8564 — داشبورد الايتمات الموقوفة (Standalone)
-  ------------------------------------------------------------
-  التطبيق بيستخدم:
-    - Cloud Firestore للداتا
-    - Firebase Authentication للدخول (Email + Password)
+  ============================================================================
+  قواعد Firestore المحصّنة — مشروع item-f8564 (داشبورد الايتمات الموقوفة)
+  ============================================================================
+  المبدأ: كل عملية بتتحقق من (1) إن المستخدم مسجّل دخول، (2) إن ملفه الشخصي
+  موجود ونشط، (3) إن دوره يسمح بالعملية دي.
 
-  🔐 كل الطلبات لازم تكون من مستخدم مسجّل دخول في Firebase Auth.
+  ملاحظة مهمة عن "قفل المدير":
+  أول حساب يسجّل دخول في النظام هو مدير النظام (bootstrap). عشان ما حدش يقدر
+  ياخد الرتبة دي بإغفال، الـ Rules بتسمح بإنشاء ملف "مدير نظام" بس لو المستخدم
+  ماسك قفل التهيئة (system/adminLock) — والقفل ده أول واحد يعمله ياخده، وباقي
+  المستخدمين لو حاولوا يعملوه هيقدروا ياخدوا قفل موجود مش ملكهم.
 
-  ⚠️ قبل نشر القواعد دي تأكد إن Email/Password مفعّل:
-     Firebase Console → Authentication → Sign-in method → Email/Password → Enable
+  أي collection مش مذكورة هنا → ممنوعة افتراضيًا (deny by default).
+  ============================================================================
 */
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // الملف الشخصي: القراءة والكتابة للمستخدم المسجّل دخول
-    // (لازم allow read, write — لأن أول تسجيل دخول بيكتب ملف الحساب الجديد)
+    /* ======================= Helpers ======================= */
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myUid() {
+      return request.auth.uid;
+    }
+
+    function myEmail() {
+      return request.auth.token.email;
+    }
+
+    // الملف الشخصي موجود؟
+    function hasProfile() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(myEmail()));
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(myEmail()));
+    }
+
+    // الحساب نشط (مش موقوف من الأدمن)
+    function isActive() {
+      return hasProfile() && myProfile().data.active == true;
+    }
+
+    function myRole() {
+      return hasProfile() ? myProfile().data.role : '';
+    }
+
+    // مدير النظام (صلاحيات كاملة)
+    function isAdmin() {
+      return isActive() && myProfile().data.isAdmin == true;
+    }
+
+    // مانجمنت (إدارة) — مش لازم يكون مدير نظام
+    function isManager() {
+      return isActive() && myRole() == 'management';
+    }
+
+    // قائمة فروع اليوزر (فاضية لو مانجمنت)
+    function myBranches() {
+      return hasProfile() && myProfile().data.branches != null ? myProfile().data.branches : [];
+    }
+
+    function inMyBranches(branchKey) {
+      return myBranches().hasAny([branchKey]);
+    }
+
+    // اليوزر ده مخول بالفرع ده؟
+    function ownsBranch(branchKey) {
+      return isActive() && (isManager() || inMyBranches(branchKey));
+    }
+
+    // قفل تهيئة المدير — أول واحد بس ياخده
+    function lockOwnedByMe() {
+      return exists(/databases/$(database)/documents/system/adminLock)
+        && get(/databases/$(database)/documents/system/adminLock).data.uid == myUid();
+    }
+
+    /* ======================= الملفات الشخصية ======================= */
+
     match /users/{userId} {
-      allow read, write: if request.auth != null;
+      // قراءة: صاحب الحساب نفسه + الأدمن + المانجمنت
+      allow read: if signedIn() && (userId == myEmail() || isAdmin() || isManager());
+
+      // إنشاء:
+      //  (أ) حساب جديد لنفسه: دور agent + موقوف + بدون صلاحيات إدارية (منع تصعيد الصلاحيات)
+      //  (ب) أول مدير نظام: لازم يكون ماسك قفل التهيئة
+      //  (ج) المانجمنت ينشئ حساب لغيره (من غير isAdmin)
+      allow create: if signedIn() && (
+        (userId == myEmail()
+          && request.resource.data.role == 'agent'
+          && request.resource.data.isAdmin == false
+          && request.resource.data.active == false)
+        || (userId == myEmail()
+          && request.resource.data.role == 'management'
+          && request.resource.data.isAdmin == true
+          && lockOwnedByMe())
+        || (isManager() && request.resource.data.isAdmin == false)
+      );
+
+      // تعديل:
+      //  - الأدمن: أي حاجة
+      //  - المانجمنت: يعدّل غيره بس من غير ما يدي isAdmin، ومن غير ما يصعّد نفسه
+      allow update: if isAdmin() || (
+        isManager()
+        && request.resource.data.isAdmin == resource.data.isAdmin
+        && (
+          userId != myEmail()
+          || (
+            request.resource.data.role == resource.data.role
+            && request.resource.data.branches == resource.data.branches
+          )
+        )
+      );
+
+      // حذف: الأدمن بس
+      allow delete: if isAdmin();
     }
 
-    // باقي المجموعات: مستخدمين مسجّلين فقط
+    /* ======================= قفل تهيئة المدير ======================= */
+
+    match /system/adminLock {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if signedIn()
+        && !exists(/databases/$(database)/documents/system/adminLock)
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    /* ======================= المطاعم ======================= */
+
     match /restaurants/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /branches/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /menu_items/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /reasons/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /item_stoppages/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /branch_times/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /audit_logs/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /notifications/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /shift_log/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /error_log/{docId} {
-      allow read, write: if request.auth != null;
+      allow read: if isActive();
+      allow write: if isManager();
     }
 
-    // أي collection جديدة: ممنوعة افتراضيًا
+    /* ======================= الفروع ======================= */
+
+    match /branches/{docId} {
+      allow read: if isActive() && (isManager() || inMyBranches(docId));
+      allow write: if isManager();
+    }
+
+    /* ======================= المنيو ======================= */
+
+    match /menu_items/{docId} {
+      // branch == '' يعني صنف مشترك على مستوى المطعم
+      allow read: if isActive() && (
+        isManager() || resource.data.branch == '' || inMyBranches(resource.data.branch)
+      );
+      allow write: if isManager();
+    }
+
+    /* ======================= أسباب الإيقاف ======================= */
+
+    match /reasons/{docId} {
+      allow read: if isActive() && (
+        isManager() || resource.data.branch == '' || inMyBranches(resource.data.branch)
+      );
+      allow write: if isManager();
+    }
+
+    /* ======================= سجلات الإيقاف ======================= */
+
+    match /item_stoppages/{docId} {
+      allow read: if isActive() && (isManager() || inMyBranches(resource.data.branch));
+      // ملاحظة: في الإنشاء بيكون resource مش موجود — لازم نستخدم request.resource
+      allow create: if isActive() && (isManager() || inMyBranches(request.resource.data.branch));
+      allow update, delete: if isActive() && (isManager() || inMyBranches(resource.data.branch));
+    }
+
+    /* ======================= أوقات التحضير والتوصيل ======================= */
+
+    match /branch_times/{docId} {
+      allow read: if isActive() && (isManager() || inMyBranches(resource.data.branch));
+      allow write: if isManager();
+    }
+
+    /* ======================= سجل الورديات ======================= */
+
+    match /shift_log/{docId} {
+      allow read: if isActive() && (isManager() || inMyBranches(resource.data.branch));
+      allow write: if isManager();
+    }
+
+    /* ======================= سجل العمليات ======================= */
+
+    match /audit_logs/{docId} {
+      // العرض للأدمن بس — الكتابة مفتوحة لكل حساب نشط (التطبيق بيسجّل العمليات)
+      allow read: if isAdmin();
+      allow write: if isActive();
+    }
+
+    /* ======================= سجل الأخطاء ======================= */
+
+    match /error_log/{docId} {
+      allow read: if isAdmin();
+      allow write: if isActive();
+    }
+
+    /* ======================= الإشعارات ======================= */
+
+    match /notifications/{docId} {
+      allow read: if isActive();
+      allow write: if isActive();
+    }
+
+    /* ======================= افتراضي: ممنوع ======================= */
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -605,9 +605,30 @@ try { getAnalytics(app); } catch (e) { /* Analytics اختياري */ }
 const db = getFirestore(app);
 window.db = db;
 
-/* Firebase Authentication — الجلسة بتخزن في sessionStorage (زيBehavior القديم) */
+/* Firebase Authentication — الجلسة بتخزن في sessionStorage */
 const auth = getAuth(app);
 try { setPersistence(auth, browserSessionPersistence); } catch (e) { }
+
+/* ============================================================
+   App Check (طبقة حماية إضافية — اختيارية)
+   ------------------------------------------------------------
+   بتمنع أي عميل مش متصفح (سكربت/سيرفر) من استخدام المشروع حتى لو
+   الـ API Key اتسرّب. بتحتاج:
+     1) Firebase Console → App Check → سجّل reCAPTCHA v3 (أو reCAPTCHA Enterprise)
+     2) انسخ مفتاح الموقع وضيفه هنا
+   لو سيبتها فاضية → التطبيق بيشتغل عادي (مفيش أي تعطيل).
+   ============================================================ */
+const APP_CHECK_SITE_KEY = '';   // ← مفتاح reCAPTCHA v3 من Console (اتركه فاضي لو مش هتفعّلها)
+if (APP_CHECK_SITE_KEY) {
+  import('https://www.gstatic.com/firebasejs/13.2.0/firebase-app-check.js')
+    .then(function (m) {
+      return m.initializeAppCheck(app, {
+        provider: new m.ReCaptchaV3Provider(APP_CHECK_SITE_KEY),
+        isTokenAutoRefreshEnabled: true
+      });
+    })
+    .catch(function (e) { console.warn('[AppCheck] تعذر التفعيل:', e && e.message); });
+}
 
 const FB = createBackend(db, { auth: auth, emailDomain: 'item-f8564.firebaseapp.com' });
 window.FB = FB;   /* الفحص والتصحيح من الكونسول */
@@ -1010,7 +1031,7 @@ function enterApp(){
 
 /* رجوع لشاشة الدخول (خروج / انتهاء الجلسة) */
 function toLogin(msg){
-  stopPolling(); TOKEN=''; saveToken(); D=null; loading(false);
+  stopPolling(); stopSessionGuard(); TOKEN=''; saveToken(); D=null; loading(false);
   LASTOP=null; try{ sessionStorage.removeItem('lastOp'); }catch(e){}
   var oc=$('opChip'); if(oc){ oc.hidden=true; oc.innerHTML=''; }
   Object.keys(charts).forEach(function(k){ if(charts[k]){ charts[k].destroy(); charts[k]=null; } });
@@ -1565,7 +1586,7 @@ function postCard(r){
   if(r.c) tags+='<span class="pill soft">حتى القفل</span>';
   if(r.v) tags+='<span class="pill gray">مراجعة</span>';
   var action=open
-    ? '<button class="btn sm" data-resume="1" data-b="'+esc(r.bkey)+'" data-x="'+r.x+'" data-it="'+esc(r.it)+'">تسجيل تشغيل</button>'
+    ? '<button class="btn sm" data-resume="1" data-b="'+esc(r.bkey)+'" data-x="'+esc(r.x)+'" data-it="'+esc(r.it)+'">تسجيل تشغيل</button>'
     : '<span class="pc-dur">'+esc(durStr(r))+'</span>';
   return '<article class="post-card'+(open?' open':'')+'">'
     +'<div class="pc-top"><div><div class="pc-name">'+esc(r.it)+'</div>'
@@ -1626,7 +1647,7 @@ function renderOpen(){
       html+='<div class="open-item"><div class="row1"><b>'+esc(r.it)+'</b><span class="pill danger num" title="مدة الوقف '+esc(durStr(r))+'">'+esc(durStr(r))+'</span></div>'
         +'<div class="meta">وقف '+esc(r.d)+' الساعة '+esc(fmtTime(r.st))+'</div>'
         +'<div class="meta">السبب: '+esc(r.r)+'</div>'
-        +'<button class="btn" data-resume="1" data-b="'+esc(b.key)+'" data-x="'+r.x+'" data-it="'+esc(r.it)+'">تسجيل تشغيل الآن</button></div>';
+        +'<button class="btn" data-resume="1" data-b="'+esc(b.key)+'" data-x="'+esc(r.x)+'" data-it="'+esc(r.it)+'">تسجيل تشغيل الآن</button></div>';
     });
     html+='</div>';
   });
@@ -2017,6 +2038,11 @@ function showUsers(list, creds){
         branch:$('uBranch').value, restaurant:$('uRestaurant').value, active:$('uActive').checked,
         isAdmin:$('uAdmin').checked };
       if(!u.username){ toast('اكتب اسم المستخدم','warn'); return; }
+      /* تحقق في المتصفح قبل الإرسال (السيرفر بيتحقق كمان) */
+      if(!/^[A-Za-z0-9._%+-]+$/.test(u.username) && !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(u.username)){
+        toast('اسم المستخدم لازم يكون إيميل صحيح (name@example.com) أو اسم إنجليزي','warn'); return;
+      }
+      if(u.username.length>120){ toast('اسم المستخدم طويل أوي','warn'); return; }
       var btn=$('mSubmit'); btn.disabled=true;
       api('saveUser',[u],function(l){ toast('تم حفظ اليوزر','ok'); showUsers(l); },function(e){ btn.disabled=false; toastErr(e); });
     });
@@ -2806,6 +2832,13 @@ function xmlEsc_(s){
     .replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]; });
 }
 function colLetter_(n){ var s=''; n++; while(n>0){ var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+/* حماية من حقن الصيغ في Excel: أي نص بيبدأ بـ = + - @ أو محارف تحكم
+   بيتحوّل لنص عادي (prefixed بـ ') عشان ما يفتحش فورمولا عند الفتح. */
+function xlsxSafe_(v){
+  var s=String(v==null?'':v);
+  if(/^[=+\-@\t\r]/.test(s)) s="'"+s;
+  return s;
+}
 function sheetName_(s){
   var n=String(s||'Sheet').replace(/[\[\]\*\?\/\\:]/g,' ').replace(/\s+/g,' ').trim().slice(0,31);
   return n||'Sheet';
@@ -2833,7 +2866,7 @@ function xlsxSheetXml_(rows){
       if(v===null||v===undefined||v==='') continue;
       var ref=colLetter_(ci)+(ri+1), st=ri===0?' s="1"':'';
       if(typeof v==='number'&&isFinite(v)) out+='<c r="'+ref+'"'+st+'><v>'+v+'</v></c>';
-      else out+='<c r="'+ref+'"'+st+' t="inlineStr"><is><t xml:space="preserve">'+xmlEsc_(v)+'</t></is></c>';
+      else out+='<c r="'+ref+'"'+st+' t="inlineStr"><is><t xml:space="preserve">'+xmlEsc_(xlsxSafe_(v))+'</t></is></c>';
     }
     out+='</row>';
   });
@@ -3514,9 +3547,32 @@ document.addEventListener('click',function(e){
   if(xs){ exportXlsx(xs.getAttribute('data-xlsx')); return; }
 });
 
+/* ============================================================
+   حارس الجلسة (Session / RBAC Guard)
+   - عند تحميل الصفحة: لازم جلسة Firebase Auth صالحة + ملف شخصي نشط
+   - كل 60 ثانية: نعيد التحقق (لو الحساب اتوقّف من جهاز تاني يخرج فورًا)
+   - لما التاب يرجع للواجهة: نفس التحقق
+   - أي فشل → رجوع فوري لشاشة الدخول
+   ============================================================ */
+var SESSION_TIMER=null;
+function startSessionGuard(){
+  if(SESSION_TIMER) clearInterval(SESSION_TIMER);
+  SESSION_TIMER=setInterval(function(){
+    if(!D || document.hidden) return;              /* التاب مخفي → تأجيل */
+    if(LOGIN_PENDING) return;
+    api('checkSession',[],function(){ /* لسه شغال ✓ */ },function(e){
+      var p=null; try{ p=parseErr(e); }catch(_){}
+      if(p && p.code==='SESSION_EXPIRED'){ toLogin('انتهت الجلسة أو اتوقّف حسابك. سجّل دخول تاني.'); }
+    });
+  },60000);
+}
+function stopSessionGuard(){
+  if(SESSION_TIMER){ clearInterval(SESSION_TIMER); SESSION_TIMER=null; }
+}
+
 /* البداية: نستعيد جلسة Firebase Auth (لو موجودة) وإلا شاشة الدخول */
 FB.restore(TOKEN).then(function(ok){
-  if(ok){ load(false); }
+  if(ok){ load(false); startSessionGuard(); }
   else { TOKEN=''; saveToken(); toLogin(''); }
 }).catch(function(){ TOKEN=''; saveToken(); toLogin(''); });
 
@@ -3524,11 +3580,25 @@ FB.restore(TOKEN).then(function(ok){
 FB.onAuthChange(function(user){
   if(user && !D && !LOGIN_PENDING){
     /* الجلسة اتستعيدت بعد ما الصفحة فتحت → ادخل الداشبورد */
-    FB.restore(TOKEN).then(function(ok){ if(ok) load(false); });
+    FB.restore(TOKEN).then(function(ok){ if(ok){ load(false); startSessionGuard(); } });
     return;
   }
-  if(!user && D){ toLogin('انتهت الجلسة، سجّل دخول تاني.'); }
+  if(!user && D){ stopSessionGuard(); toLogin('انتهت الجلسة، سجّل دخول تاني.'); }
 });
+
+/* رجوع التبويب للواجهة → تحقق سريع من الصلاحية */
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden) return;
+  if(!D) return;
+  if(!window.FB || !window.FB.auth) return;
+  var u=window.FB.auth.currentUser;
+  if(!u){ stopSessionGuard(); toLogin('انتهت الجلسة، سجّل دخول تاني.'); return; }
+  api('checkSession',[],function(){},function(e){
+    var p=null; try{ p=parseErr(e); }catch(_){}
+    if(p && p.code==='SESSION_EXPIRED'){ stopSessionGuard(); toLogin('انتهت الجلسة أو اتوقّف حسابك. سجّل دخول تاني.'); }
+  });
+});
+
 </script>
 </body>
 </html>
