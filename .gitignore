@@ -72,3 +72,9 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# ملفات Accident باسم أوامر shell (firebase / main / cd)
+firebase
+main
+cd
+
