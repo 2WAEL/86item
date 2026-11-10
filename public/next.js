@@ -128,6 +128,108 @@ function doGet() {
 }
 
 /* ============================================================
+ *  واجهة HTTP (JSON) — للربط بتطبيق مستضاف خارج Apps Script
+ *  (زي Firebase Hosting أو GitHub Pages)
+ *  ------------------------------------------------------------
+ *  الواجهة بقت ترسل طلبات fetch عادية (POST) على رابط الـ Web App:
+ *     https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
+ *  بدل google.script.run اللي مش موجود بره بيئة Apps Script.
+ *
+ *  جسم الطلب (JSON):
+ *     { "action": "login", "args": ["user","pass"], "token": "" }
+ *  الرد (JSON):
+ *     { "ok": true,  "result": <القيمة> }
+ *     { "ok": false, "error": { message, code, kind, detail, stack, ... } }
+ *
+ *  ⚠️ لازم الـ Web App يكون منشور بصلاحية "أي حد" (Anyone) وإلا
+ *     المتصفح هيجيب صفحة تسجيل دخول Google بدل JSON.
+ * ============================================================ */
+
+/** رد JSON جاهز للإرسال */
+function jsonOut_(obj) {
+  try {
+    return ContentService.createTextOutput(JSON.stringify(obj))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (e) {
+    return ContentService.createTextOutput('{"ok":false,"error":{"message":"تعذر تجهيز الرد."}}')
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/** تحويل أي خطأ لصيغة JSON مفهومة للواجهة (نفس وسم __ERRV2__ اللي الواجهة بتعرفه) */
+function errPayload_(e) {
+  var raw = (e && e.message) ? String(e.message) : String(e || '');
+  var mark = (typeof ERR_MARK === 'string' && ERR_MARK) ? ERR_MARK : '__ERRV2__';
+  var ix = raw.indexOf(mark);
+  if (ix >= 0) {
+    try {
+      var o = JSON.parse(raw.slice(ix + mark.length));
+      if (o && typeof o === 'object') {
+        o.ok = false;
+        o.message = o.message || 'حصل خطأ غير متوقع.';
+        o.detail = o.detail || ''; o.stack = o.stack || ''; o.cause = o.cause || '';
+        o.kind = o.kind || ''; o.business = !!o.business || o.kind === 'validation';
+        return o;
+      }
+    } catch (_) {}
+  }
+  var safe = scrubSecrets_(raw);
+  var isSession = safe.indexOf('SESSION_EXPIRED') >= 0;
+  var isRate = safe.indexOf('RATE_LIMIT') >= 0;
+  var business = isSession || isRate || isBusinessMessage_(safe);
+  return {
+    ok: false,
+    kind: business ? 'validation' : 'error',
+    business: business,
+    code: isSession ? 'SESSION_EXPIRED' : (isRate ? 'RATE_LIMIT' : (business ? '' : errCode_(safe))),
+    action: 'api',
+    message: publicMsg_(safe),
+    detail: business ? '' : safe.slice(0, CONFIG.DETAIL_MAX || 1200),
+    stack: '',
+    cause: '',
+    at: nowIso_(),
+    user: ''
+  };
+}
+
+/**
+ * نقطة الدخول عبر HTTP (Web App).
+ * بتستقبل JSON وبتوزّعه على نفس الدوال المستخدمة مع google.script.run:
+ *   - login  → login(username, password)
+ *   - logout → logout(token)
+ *   - الباقي → apiCall(token, action, args)  (نفس فحص الجلسة + الدور + Rate Limit)
+ */
+function doPost(e) {
+  var body = '';
+  try { body = (e && e.postData && e.postData.contents) ? String(e.postData.contents) : ''; } catch (_) {}
+  var req = null;
+  try { req = JSON.parse(body || ''); } catch (_) {
+    return jsonOut_({ ok: false, error: errPayload_(new Error('BAD_REQUEST: جسم الطلب مش JSON صالح.')) });
+  }
+  if (!req || typeof req !== 'object') {
+    return jsonOut_({ ok: false, error: errPayload_(new Error('BAD_REQUEST: جسم الطلب لازم يكون JSON object.')) });
+  }
+
+  var action = String(req.action || '').replace(/[^A-Za-z0-9_]/g, '');
+  var args = Array.isArray(req.args) ? req.args : [];
+  var token = String(req.token || '');
+
+  try {
+    var clean = args.map(function (v) { return sanitizeArg_(v, 0); });
+    if (action === 'login') {
+      return jsonOut_({ ok: true, result: login.apply(null, clean.slice(0, 2)) });
+    }
+    if (action === 'logout') {
+      var out = logout(token);
+      return jsonOut_({ ok: true, result: (out === undefined) ? true : out });
+    }
+    return jsonOut_({ ok: true, result: apiCall(token, action, clean) });
+  } catch (err) {
+    return jsonOut_({ ok: false, error: errPayload_(err) });
+  }
+}
+
+/* ============================================================
  *  أدوات مساعدة
  * ============================================================ */
 

@@ -866,22 +866,113 @@ function checkAdminUserField(id){
   return true;
 }
 
-/* كل نداء للسيرفر بيمر من بوابة apiCall (تحقق جلسة + دور + Rate Limit في السيرفر).
-   فيه fallback للنداء المباشر لو النسخة المنشورة قديمة. */
+/* ============================================================
+ *  الاتصال بالسيرفر — Google Apps Script Web App عبر fetch()
+ *  ------------------------------------------------------------
+ *  was google.script.run (مش موجود بره بيئة Apps Script) بقى
+ *  طلبات POST عادية (fetch) على رابط الـ Web App:
+ *     https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
+ *
+ *  ترتيب تحديد الرابط:
+ *    1) ?api=<url> في عنوان الصفحة        (للتجربة السريعة)
+ *    2) localStorage['gas_api_url']        (يتحفظ من الكونسول)
+ *    3) GAS_WEB_APP_URL بالأسفل            (الافتراضي الثابت)
+ *
+ *  ⚠️ شروط لازم تتأكد منها:
+ *    - الـ Web App منشور بصلاحية "أي حد" (Anyone) وإلا هيجيب صفحة
+ *      تسجيل دخول Google بدل JSON.
+ *    -.body بيتنسلب كـ text/plain (مش application/json) عشان المتصفح
+ *      يعمل "simple request" من غير preflight — ده المتوافق مع GAS.
+ * ============================================================ */
+var GAS_WEB_APP_URL = '';   /* ← الصق هنا رابط الـ Web App: https://script.google.com/macros/s/...../exec */
+var GAS_INFLIGHT = {};      /* منع تكرار نفس الطلب وهو شغال (خصوصًا الاستطلاع) */
+
+function gasApiUrl(){
+  var u='';
+  try{
+    var q=(location.search||'').match(/[?&]api=([^&]+)/);
+    if(q) u=decodeURIComponent(q[1]);
+  }catch(e){}
+  if(!u){ try{ u=localStorage.getItem('gas_api_url')||''; }catch(e){} }
+  if(!u) u=String(GAS_WEB_APP_URL||'');
+  return String(u||'').trim();
+}
+function gasSetApiUrl(u){
+  try{ if(u) localStorage.setItem('gas_api_url',u); else localStorage.removeItem('gas_api_url'); }catch(e){}
+  GAS_WEB_APP_URL=String(u||'');
+}
+/* خطأ شبكة/بروتوكول: بنعمله نفس صيغة الأخطاء اللي الواجهة بتعرفها */
+function gasError_(message, code){
+  var e=new Error(message);
+  e.business=true;
+  e.gasError=code||'NETWORK';
+  return e;
+}
+/* طلب واحد للسيرفر: {action, args, token}  →  نفس قيم google.script.run */
+function gasPost(payload, ok, fail){
+  var url=gasApiUrl();
+  if(!url){
+    fail(gasError_('لم يتم ضبط رابط الـ Web App بتاع Google Apps Script. حطه في GAS_WEB_APP_URL أو استخدم ?api=<url>.','NO_URL'));
+    return;
+  }
+  var body;
+  try{ body=JSON.stringify(payload); }
+  catch(e){ fail(gasError_('تعذر تجهيز بيانات الطلب.','BAD_REQUEST')); return; }
+
+  fetch(url,{
+    method:'POST',
+    mode:'cors',
+    redirect:'follow',
+    credentials:'omit',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:body
+  }).then(function(res){
+    return res.text().then(function(txt){
+      var data=null;
+      try{ data=JSON.parse(txt); }catch(e){}
+      if(!data || typeof data!=='object' || typeof data.ok==='undefined'){
+        /* رد مش JSON = غالبًا رابط غلط أو الـ Web App بيطلب تسجيل دخول */
+        if(/signin|accounts\.google|ServiceLogin/i.test(txt||'')){
+          throw gasError_('رابط الـ Web App بيطلب تسجيل دخول Google. انشره بصلاحية "أي حد" (Anyone).','AUTH_REQUIRED');
+        }
+        throw gasError_('رد غير متوقع من السيرفر. تأكد إن الرابط صحيح ومنشور كـ Web App بصلاحية "أي حد".','BAD_RESPONSE');
+      }
+      if(data.ok) return data.result;
+      var err=(data.error&&typeof data.error==='object')?data.error:{message:'حصل خطأ غير متوقع.'};
+      var e=new Error('__ERRV2__'+JSON.stringify({
+        ok:false,
+        kind:err.kind||'',
+        business:!!err.business,
+        code:err.code||'',
+        action:err.action||'',
+        message:err.message||'حصل خطأ غير متوقع.',
+        detail:err.detail||'',
+        stack:err.stack||'',
+        cause:err.cause||'',
+        at:err.at||'',
+        user:err.user||''
+      }));
+      throw e;
+    });
+  }).then(function(v){ ok(v); }, function(e){ fail(e); });
+}
+
+/* كل نداء للسيرفر بيمر من بوابة واحدة (تحقق جلسة + دور + Rate Limit في السيرفر). */
 function api(fn, args, ok, fail){
   var settled=false;
-  function success(r){ settled=true; (ok||function(){ })(r); }
+  function success(r){ if(settled) return; settled=true; (ok||function(){ })(r); }
   function failure(e){
-    settled=true;
-    if(/SESSION_EXPIRED/.test(errMsg(e))){ toLogin('انتهت الجلسة، سجّل دخول تاني.'); return; }
+    if(settled) return; settled=true;
+    var p=null; try{ p=parseErr(e); }catch(_){}
+    var expired=(p&&p.code==='SESSION_EXPIRED')||/SESSION_EXPIRED/.test(errMsg(e));
+    if(expired){ toLogin('انتهت الجلسة، سجّل دخول تاني.'); return; }
     if(fail) fail(e); else toastErr(e);
   }
-  var run=google.script.run.withSuccessHandler(success).withFailureHandler(failure);
-  if(typeof run.apiCall==='function'){
-    try{ run.apiCall(TOKEN, fn, args||[]); return; }catch(e){ if(settled) return; }
-  }
-  try{ run[fn].apply(run,[TOKEN].concat(args||[])); }
-  catch(e){ failure(e); }
+  /* الاستطلاع: لو الطلب السابق لسه شغال ما نبعتهوش تاني (منع تراكم الطلبات) */
+  if(fn==='pollState' && GAS_INFLIGHT[fn]){ return; }
+  GAS_INFLIGHT[fn]=1;
+  var done=function(){ GAS_INFLIGHT[fn]=0; };
+  gasPost({action:fn, args:args||[], token:TOKEN||''}, function(v){ done(); success(v); }, function(e){ done(); failure(e); });
 }
 
 function brandLabel(){
@@ -3285,16 +3376,15 @@ $('loginForm').addEventListener('submit',function(e){
   var u=$('lgUser').value.trim(), p=$('lgPass').value;
   if(!u || !p){ $('lgErr').textContent='اكتب اسم المستخدم وكلمة السر.'; return; }
   $('lgBtn').disabled=true; $('lgErr').textContent=''; loading(true);
-  google.script.run
-    .withSuccessHandler(function(res){
-      loading(false); $('lgBtn').disabled=false; $('lgPass').value='';
-      TOKEN=res.token; saveToken(); onData(res.data);
-    })
-    .withFailureHandler(function(err){ loading(false); $('lgBtn').disabled=false; $('lgErr').textContent=errMsg(err); })
-    .login(u,p);
+  gasPost({action:'login', args:[u,p], token:''}, function(res){
+    loading(false); $('lgBtn').disabled=false; $('lgPass').value='';
+    TOKEN=res.token; saveToken(); onData(res.data);
+  }, function(err){
+    loading(false); $('lgBtn').disabled=false; $('lgErr').textContent=errMsg(err);
+  });
 });
 $('logoutBtn').addEventListener('click',function(){
-  try{ google.script.run.logout(TOKEN); }catch(e){}
+  try{ gasPost({action:'logout', args:[], token:TOKEN||''}, function(){}, function(){}); }catch(e){}
   toLogin('');
 });
 
