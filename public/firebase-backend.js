@@ -149,6 +149,24 @@ function num(v) {
 }
 function err(msg) { var e = new Error(msg); e.business = true; return e; }
 
+/* ترجمة أخطاء Firestore لرسالة واضحة (أهمها صلاحيات القواعد) */
+function fsError(e, where) {
+  var code = (e && e.code) ? String(e.code) : '';
+  var msg = (e && e.message) ? String(e.message) : '';
+  if (code === 'permission-denied' || /insufficient permissions/i.test(msg)) {
+    return err('قواعد Firestore بتمنع ' + (where || 'العملية') +
+      '. انشر القواعد المحدثة: firebase deploy --only firestore:rules' +
+      ' (وخلّي المجموعة المسموحة فيها allow read, write).');
+  }
+  if (code === 'unavailable' || /unavailable|deadline/i.test(msg)) {
+    return err('تعذر الوصول لقاعدة البيانات دلوقتي. اتأكد من الاتصال وحاول تاني.');
+  }
+  if (code === 'not-found') return err('العنصر مش موجود في قاعدة البيانات.');
+  if (code === 'failed-precondition') return err('العملية اترفضت من قاعدة البيانات. حدّث الصفحة وحاول تاني.');
+  if (code === 'unauthenticated') return err('انتهت الجلسة. سجّل دخول تاني.');
+  return null;
+}
+
 /* ============================================================
  *  Backend
  * ============================================================ */
@@ -356,7 +374,10 @@ class FirestoreBackend {
       active: !!isFirst, ver: this._randHex(8),
       createdAt: nowIso(), createdBy: 'auth', seq: Date.now()
     };
-    await setDoc(doc(this.db, COL.users, keyOf(email) || keyOf(name)), data);
+    await setDoc(doc(this.db, COL.users, keyOf(email) || keyOf(name)), data).catch(function (e) {
+      /* أشهر خطأ هنا: القواعد بتمنع الكتابة في users */
+      throw fsError(e, 'إنشاء ملف الحساب') || e;
+    });
     await this._reload(COL.users);
     return { profile: this._findUser(email) || this._findUser(name), created: true, isFirst: isFirst };
   }
@@ -509,7 +530,9 @@ class FirestoreBackend {
     if (this.state[COL.restaurants].length) return;
     var restId = 'MAIN';
     var rest = { id: restId, name: 'المطعم الرئيسي', active: true, createdAt: nowIso(), createdBy: by, seq: Date.now() };
-    await setDoc(doc(this.db, COL.restaurants, restId), rest);
+    await setDoc(doc(this.db, COL.restaurants, restId), rest).catch(function (e) {
+      throw fsError(e, 'تهيئة البيانات الأساسية (المطاعم)') || e;
+    });
     this.state[COL.restaurants].push(rest);
 
     var defs = [
@@ -526,7 +549,9 @@ class FirestoreBackend {
         openSec: 9 * 3600, closeSec: parseSec(defs[i].close) || 3 * 3600,
         days: null, ver: 1, createdAt: nowIso(), createdBy: by, seq: base + i
       };
-      await setDoc(doc(this.db, COL.branches, key), b);
+      await setDoc(doc(this.db, COL.branches, key), b).catch(function (e) {
+        throw fsError(e, 'تهيئة البيانات الأساسية (الفروع)') || e;
+      });
       this.state[COL.branches].push(b);
       var t = {
         branch: key, restaurant: restId, prepMin: 10, delMin: 30,

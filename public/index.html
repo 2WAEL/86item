@@ -647,10 +647,16 @@ function authErrorMessage(e){
     'auth/operation-not-allowed':'تسجيل الدخول بالإيميل مش مفعّل. من Firebase Console: Authentication ▸ Sign-in method ▸ Email/Password ▸ Enable.',
     'auth/configuration-not-found':'Firebase Authentication مش مهيّأ في المشروع. فعّل Email/Password من الـ Console.',
     'auth/popup-closed-by-user':'تم إغلاق النافذة.',
-    'auth/captcha-check-failed':'فشل التحقق. حاول تاني.'
+    'auth/captcha-check-failed':'فشل التحقق. حاول تاني.',
+    /* أخطاء Firestore (صلاحيات القواعد) */
+    'permission-denied':'قواعد Firestore بتمنع العملية. انشر القواعد المحدثة: firebase deploy --only firestore:rules (والمجموعة المسموحة لازم فيها allow read, write).',
+    'unavailable':'تعذر الوصول لقاعدة البيانات دلوقتي. اتأكد من الاتصال وحاول تاني.',
+    'failed-precondition':'العملية اترفضت من قاعدة البيانات. حدّث الصفحة وحاول تاني.',
+    'unauthenticated':'انتهت الجلسة. سجّل دخول تاني.'
   };
   if(map[code]) return map[code];
   var raw=(e && e.message)?String(e.message):'';
+  if(/insufficient permissions/i.test(raw)) return map['permission-denied'];
   if(raw && /[\u0600-\u06FF]/.test(raw)) return raw;
   return 'تعذر تسجيل الدخول. حاول تاني.';
 }
