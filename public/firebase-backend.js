@@ -365,6 +365,10 @@ class FirestoreBackend {
   /** استعادة الجلسة من Firebase Auth (بعد تحديث الصفحة) */
   async restore(token) {
     try {
+      /* Firebase Auth بيستعيد الجلسة بشكل غير متزامن — لازم ننتظره */
+      if (this.auth && typeof this.auth.authStateReady === 'function') {
+        try { await this.auth.authStateReady(); } catch (e) { }
+      }
       var fbUser = this.auth && this.auth.currentUser ? this.auth.currentUser : null;
       if (!fbUser) return false;
       var res = await this._ensureProfile(fbUser, fbUser.email);

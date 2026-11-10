@@ -3400,6 +3400,11 @@ FB.restore(TOKEN).then(function(ok){
 
 /* لو الحساب اتقفل أو اتسجل خروج من جهاز تاني → رجوع لشاشة الدخول فورًا */
 FB.onAuthChange(function(user){
+  if(user && !D){
+    /* الجلسة اتستعيدت بعد ما الصفحة فتحت → ادخل الداشبورد */
+    FB.restore(TOKEN).then(function(ok){ if(ok) load(false); });
+    return;
+  }
   if(!user && D){ toLogin('انتهت الجلسة، سجّل دخول تاني.'); }
 });
 </script>
