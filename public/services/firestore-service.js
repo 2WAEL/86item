@@ -52,15 +52,16 @@ const COL = {
   notif: 'notifications',
   shift: 'shift_log',
   errors: 'error_log',
-  system: 'system'
+  system: 'system',
+  config: 'config'
 };
-/* المجموعات اللي التطبيق بيقرأ منها ويشترك فيها (نظام التهيئة مش منها) */
-const ALL_COLS = Object.keys(COL).filter(function (k) { return k !== 'system'; })
+/* المجموعات اللي التطبيق بيقرأ منها ويشترك فيها (نظام + إعدادات مش منهم) */
+const ALL_COLS = Object.keys(COL).filter(function (k) { return k !== 'system' && k !== 'config'; })
   .map(function (k) { return COL[k]; });
 
 const TZ = 'Africa/Cairo';
 const UNSPEC = 'غير محدد';
-const ROLES = { MGMT: 'management', BRANCH: 'branch', AGENT: 'agent' };
+
 const SESSION_MS = 6 * 60 * 60 * 1000;
 
 /* ============================================================
@@ -247,6 +248,11 @@ class FirestoreBackend {
         });
         self._sort(l.name);
       });
+      /* إعدادات الأدوار (config/roles) — المصدر الوحيد لتعريف الأدوار */
+      try {
+        var cfg = await getDoc(doc(self.db, COL.config, 'roles'));
+        if (cfg.exists()) self._applyRoleConfig(cfg.data());
+      } catch (e) { }
       self.loaded = true;
       self.rev++;
     });
@@ -269,8 +275,81 @@ class FirestoreBackend {
     this.rev++;
   }
 
+  /* ============================================================
+   *  الأدوار — بتقرأ من Firestore (config/roles)
+   *  ------------------------------------------------------------
+   *  مفيش قوائم أدوار/صلاحيات ثابتة في الكود: كل حاجة بتتبعت من
+   *  مستند الإعدادات في Firestore. البذرة الأولى بس (مرة واحدة)
+   *  بتعمل المستند ده لو مش موجود.
+   * ============================================================ */
+
+  /** بذرة تعريف الأدوار (مرة واحدة — بعدها كله بيانات) */
+  async _seedRoleConfig(by) {
+    var roles = [
+      { key: 'management', label: 'مانجمنت', scope: 'all', view: 'management', grantAdmin: true, notify: true, actions: [], aliases: [] },
+      { key: 'branch', label: 'ديسباتشر فرع', scope: 'branch', view: 'branch', grantAdmin: false, notify: true, actions: ['logStop', 'resumeStop'], aliases: ['dispatcher', 'dispatch'] },
+      { key: 'agent', label: 'ايجينت (قراءة بس)', scope: 'branch', view: 'agent', grantAdmin: false, notify: false, actions: [], aliases: [] }
+    ];
+    var aliases = {};
+    roles.forEach(function (r) { (r.aliases || []).forEach(function (a) { aliases[a] = r.key; }); });
+    await setDoc(doc(this.db, COL.config, 'roles'), {
+      roles: roles, aliases: aliases, at: nowIso(), by: by || 'system'
+    });
+    this._applyRoleConfig({ roles: roles, aliases: aliases });
+    return { roles: roles, aliases: aliases };
+  }
+
+  /** خريطة الأدوار (من الكاش) — بتتحدّث مع المستند */
+  _applyRoleConfig(data) {
+    this._roleMap = {}; this._roleAliases = {};
+    var list = (data && Array.isArray(data.roles)) ? data.roles : [];
+    var self = this;
+    list.forEach(function (r) { if (r && r.key) self._roleMap[r.key] = r; });
+    var al = (data && data.aliases) ? data.aliases : {};
+    Object.keys(al).forEach(function (k) { self._roleAliases[k] = al[k]; });
+  }
+
+  /** إعدادات الأدوار (للواجهة) — بتقرأ من Firestore */
+  async getRoleConfig() {
+    var u = this._requireManager();
+    var snap = await getDoc(doc(this.db, COL.config, 'roles'));
+    var data = snap.exists() ? snap.data() : null;
+    if (!data || !Array.isArray(data.roles) || !data.roles.length) {
+      /* المستند مش موجود: الأدمن العام يعمله (مرة واحدة) */
+      if (!this.isGlobal(u)) return { roles: [], aliases: {} };
+      data = await this._seedRoleConfig(u.username);
+    }
+    this._applyRoleConfig(data);
+    return { roles: data.roles || [], aliases: data.aliases || {} };
+  }
+
+  /** دور اليوزر (من الخريطة) — الافتراضي: أقل صلاحية */
+  _roleDef(roleKey) {
+    var d = this._roleMap[roleKey];
+    return d || { key: roleKey || '', label: roleKey || '', scope: 'branch', grantAdmin: false, aliases: [] };
+  }
+
+  /** نطاق الدور: 'all' (يشوف كل برانداته) أو 'branch' (فروعه بس) */
+  _roleScope(profile) {
+    return this._roleDef(profile && profile.role).scope === 'all' ? 'all' : 'branch';
+  }
+
+  /** يحوّل الاسم البديل (dispatcher) لاسم الدور الأساسي */
+  _resolveRoleKey(input) {
+    var k = String(input || '').trim();
+    if (!k) return '';
+    if (this._roleMap[k]) return k;
+    var alias = this._roleAliases[k] || this._roleAliases[k.toLowerCase()];
+    return alias || k;
+  }
+
   /* ---------------- session (Firebase Authentication) ---------------- */
-  isGlobal(u) { return !!(u && u.role === ROLES.MGMT && u.isAdmin); }
+  isGlobal(u) {
+    if (!u || u.isAdmin !== true) return false;
+    /* صلاحية المدير النظامي من إعدادات الأدوار (مش اسم دور ثابت في الكود) */
+    var def = this._roleDef(u.role);
+    return def.grantAdmin === true || !this._roleMap[u.role];
+  }
 
   _require(roles) {
     var s = this.session;
@@ -280,8 +359,52 @@ class FirestoreBackend {
     if (!u || u.active === false) throw err('SESSION_EXPIRED');
     if (String(u.ver || '') !== String(s.ver || '')) throw err('SESSION_EXPIRED');
     s.user = u;
-    if (roles && roles.indexOf(u.role) < 0) throw err('العملية دي مش متاحة لدور حسابك.');
+    /* لو اتحددت أدوار مطلوبة → نقارنها بإعدادات الأدوار (مش بقائمة ثابتة) */
+    if (roles && roles.length) {
+      var self = this;
+      var allowed = roles.some(function (r) { return self._resolveRoleKey(r) === u.role; });
+      if (!allowed) throw err('العملية دي مش متاحة لدور حسابك.');
+    }
     return u;
+  }
+
+  /** المانجمنت (نطاق 'all' حسب إعدادات الأدوار) */
+  _requireManager() {
+    var u = this._require();
+    if (this._roleScope(u) !== 'all') throw err('العملية دي مش متاحة لدور حسابك.');
+    return u;
+  }
+
+  /** أي حساب نشط (مانجمنت أو ديسباتشر) */
+  _requireAny() {
+    return this._require();
+  }
+
+  /** الدور يقدر ينفذ عملية معيّنة؟ (من إعدادات الأدوار) */
+  _roleCan(profile, action) {
+    var def = this._roleDef(profile && profile.role);
+    if (Array.isArray(def.actions) && def.actions.length) return def.actions.indexOf(action) >= 0;
+    return this._roleScope(profile) === 'all';
+  }
+
+  /** الأدوار اللي بنبعتلها الإشعارات (من إعدادات الأدوار) */
+  _notifyRoles() {
+    var out = [];
+    Object.keys(this._roleMap).forEach(function (k) {
+      var d = this._roleMap[k];
+      if (d && d.notify === true) out.push(k);
+    }, this);
+    return out.length ? out : Object.keys(this._roleMap);
+  }
+
+  /** الدور الافتراضي للفروع (أقل صلاحية تقدر تسجّل إيقاف) */
+  _defaultScopedRole() {
+    var keys = Object.keys(this._roleMap);
+    for (var i = 0; i < keys.length; i++) {
+      var d = this._roleMap[keys[i]];
+      if (d && d.grantAdmin !== true && d.scope === 'branch') return d.key;
+    }
+    return keys.length ? keys[0] : '';
   }
 
   /* اليوزر بيتخزّن بزمن الـ uid بتاع Firebase Auth (اسم المستخدم أو الإيميل) */
@@ -444,7 +567,7 @@ class FirestoreBackend {
     };
     /* لو الحساب مربوط بفرع واحد فقط (نسخة قديمة) → نحوله لقائمة */
     if (!u.branches.length && u.branch) u.branches = [u.branch];
-    if (u.role === ROLES.MGMT) {
+    if (this._roleScope(u) === 'all') {
       if (!u.restaurant && !this.isGlobal(u)) {
         var act = this.state[COL.restaurants].filter(function (r) { return r.active !== false; });
         u.restaurant = (act[0] || this.state[COL.restaurants][0] || {}).id || '';
@@ -452,7 +575,7 @@ class FirestoreBackend {
       u.branches = [];
       return u;
     }
-    if (u.role === ROLES.BRANCH || u.role === ROLES.AGENT) {
+    if (this._roleScope(u) === 'branch') {
       if (!u.branches.length) throw err('الحساب غير مربوط بفرع. كلّم مدير النظام.');
       /* بنتحقق إن كل فرع موجود ونشط فعلاً */
       var self = this;
@@ -467,6 +590,58 @@ class FirestoreBackend {
       u.restaurant = recs[0].restaurant;
     }
     return u;
+  }
+
+  /**
+   * تسجيل مستخدم جديد (Sign-up) — بينشئ ملفه الشخصي بحالة "موقوف"
+   * ومن غير أي صلاحيات أو فروع، لحد ما الإدارة تعتمده.
+   * (المصادقة نفسها بتتم في خدمة المصادقة)
+   */
+  async registerNewUser(fbUser, requestedName) {
+    if (!fbUser || !fbUser.email) throw err('تعذر تحديد البريد. حاول تاني.');
+    var email = String(fbUser.email).toLowerCase();
+    if (!this._isValidEmail(email)) throw err('الإيميل مش صالح. استخدم إيميل صحيح زي name@example.com.');
+
+    /* لو في ملف أصلاً → يبقى موجود، مفيش إنشاء تاني */
+    var existing = this._findUser(email);
+    if (existing) {
+      await this._reload(COL.users);
+      existing = this._findUser(email);
+      if (!existing) throw err('في مشكلة في الحساب. كلّم مدير النظام.');
+      if (existing.active === false) {
+        return { ok: true, pending: true, message: 'حسابك بانتظار موافقة الإدارة. كلّم مدير النظام.' };
+      }
+      return { ok: true, pending: false, message: 'الحساب ده موجود بالفعل — سجّل دخول بكلمة السر.' };
+    }
+
+    /* الملف الجديد: موقوف + أقل صلاحية + من غير فروع */
+    var name = norm(requestedName) || this._displayName(email);
+    if (!/^[A-Za-z0-9_.-]{2,30}$/.test(name)) name = this._displayName(email);
+    /* الدور الافتراضي = أقل صلاحية متاحة في الإعدادات */
+    var def = this._leastPrivilegeRole();
+    var data = {
+      username: name, usernameKey: keyOf(email), email: email, uid: (fbUser && fbUser.uid) || '',
+      role: def.key, branch: '', branches: [], restaurant: '', isAdmin: false,
+      active: false, ver: this._randHex(8), createdAt: nowIso(), createdBy: 'signup', seq: Date.now()
+    };
+    await setDoc(doc(this.db, COL.users, keyOf(email)), data).catch(function (e) {
+      throw fsError(e, 'إنشاء ملف الحساب') || e;
+    });
+    await this._reload(COL.users);
+    await this._audit(null, 'SIGNUP', email, { role: def.key }, 'PENDING');
+    return { ok: true, pending: true, message: 'تم إنشاء حسابك بنجاح. حسابك بانتظار موافقة الإدارة.' };
+  }
+
+  /** أقل دور متاح في الإعدادات (للحسابات الجديدة) */
+  _leastPrivilegeRole() {
+    var keys = Object.keys(this._roleMap);
+    if (!keys.length) return { key: 'agent', label: 'agent', scope: 'branch', grantAdmin: false };
+    /* أول دور مش grantAdmin */
+    for (var i = 0; i < keys.length; i++) {
+      var d = this._roleMap[keys[i]];
+      if (d && d.grantAdmin !== true) return d;
+    }
+    return this._roleMap[keys[0]];
   }
 
   /**
@@ -592,6 +767,8 @@ class FirestoreBackend {
       rr.id = rref.id;
       this.state[COL.reasons].push(rr);
     }
+    /* تعريف الأدوار (مستند الإعدادات) — كل حاجة بعدها بتقرأ منه */
+    await this._seedRoleConfig(by);
     /* مزامنة تامة من Firestore عشان مفيش أي تكرار في الذاكرة */
     await this._reloadMany([COL.restaurants, COL.branches, COL.times, COL.reasons, COL.users]);
   }
@@ -631,8 +808,8 @@ class FirestoreBackend {
       if (!self.isGlobal(u) || scoped) {
         if (!same(b.restaurant, rid)) return false;
       }
-      /* العزل بالفرع: الديسباتشر/الايجينت بيشوفوا فروعهم بس */
-      if (u.role === ROLES.BRANCH || u.role === ROLES.AGENT) {
+      /* العزل بالفرع: أي دور نطاقه 'branch' بيشوف فروعه بس (من إعدادات الأدوار) */
+      if (self._roleScope(u) === 'branch') {
         return canAccessBranch(u, b.key) || canAccessBranch(u, b.name);
       }
       return true;
@@ -877,7 +1054,7 @@ class FirestoreBackend {
   }
 
   _scopeRows(u, rows, shift, now) {
-    if (u.role === ROLES.MGMT) return rows;
+    if (this._roleScope(u) === 'all') return rows;
     var nowBase = dayNum(now.key) * 86400 + now.sec;
     var filtered = rows.filter(function (r) {
       var ts = dayNum(r.d) * 86400 + (+r.stv || 0);
@@ -886,7 +1063,7 @@ class FirestoreBackend {
       if (shift) return ts >= shift.startAbs && ts <= shift.endAbs;
       return ts >= dayNum(now.key) * 86400;
     });
-    if (u.role === ROLES.AGENT) {
+    if (this._roleScope(u) === 'branch' && !this._roleCan(u, 'write')) {
       filtered = filtered.map(function (r) {
         return { d: r.d, it: r.it, st: r.st, en: r.en, stv: r.stv, env: r.env, o: r.o };
       });
@@ -1225,8 +1402,10 @@ class FirestoreBackend {
 
   /* ---------------- stop / resume ---------------- */
   async logStop(restaurant, branch, item, reason, note, scope) {
-    var u = this._require([ROLES.MGMT, ROLES.BRANCH]);
-    if (u.role === ROLES.BRANCH) {
+    var u = this._requireAny();
+    /* العملية مسموحة للدور بس حسب إعدادات الأدوار (actions) */
+    if (!this._roleCan(u, 'logStop')) throw err('دور حسابك مش مسموح يسجّل إيقاف.');
+    if (this._roleScope(u) === 'branch') {
       restaurant = u.restaurant; branch = u.branch; scope = 'branch';
     }
     item = cleanText(item, 600);
@@ -1283,7 +1462,7 @@ class FirestoreBackend {
       title: '⏸ إيقاف صنف: ' + item,
       body: (scope === 'all' ? 'كل فروع ' + this.brandName(rid) : targets[0].name) + ' — ' + reason,
       restaurant: rid, branch: scope === 'all' ? '' : targets[0].key,
-      roles: [ROLES.MGMT, ROLES.BRANCH], kind: 'stop', severity: 'danger', ref: firstRow || ''
+      roles: this._notifyRoles(), kind: 'stop', severity: 'danger', ref: firstRow || ''
     });
 
     return {
@@ -1325,13 +1504,15 @@ class FirestoreBackend {
   }
 
   async resumeStop(branch, row, item) {
-    var u = this._require([ROLES.MGMT, ROLES.BRANCH]);
-    if (u.role === ROLES.BRANCH) branch = u.branch;
+    var u = this._requireAny();
+    /* العملية مسموحة للدور بس حسب إعدادات الأدوار (actions) */
+    if (!this._roleCan(u, 'resumeStop')) throw err('دور حسابك مش مسموح يشغّل ايتم.');
+    if (this._roleScope(u) === 'branch') branch = u.branch;
     branch = cleanText(branch, 60);
     item = cleanText(item, 600);
     var b = this._branchRecord(branch);
     if (!b) throw err('الفرع "' + branch + '" غير موجود.');
-    if (u.role === ROLES.BRANCH && !same(u.branch, b.key) && !same(u.branch, b.name)) {
+    if (this._roleScope(u) === 'branch' && !same(u.branch, b.key) && !same(u.branch, b.name)) {
       throw err('مش مسموح بتشغيل ايتم في فرع تاني.');
     }
     var s = this.state[COL.stops].filter(function (x) { return x.id === row; })[0];
@@ -1353,13 +1534,13 @@ class FirestoreBackend {
       title: '▶ تشغيل صنف: ' + item,
       body: b.name + ' — رجع الساعة ' + fmtHMS(now.sec),
       restaurant: b.restaurant, branch: b.key,
-      roles: [ROLES.MGMT, ROLES.BRANCH], kind: 'resume', severity: 'ok', ref: s.id
+      roles: this._notifyRoles(), kind: 'resume', severity: 'ok', ref: s.id
     });
     return { ok: true, time: now.hms, data: this.scopedPayload(b.restaurant) };
   }
 
   async getStopOptions(restaurant) {
-    var u = this._require([ROLES.MGMT, ROLES.BRANCH]);
+    var u = this._requireAny();
     var rid = this.resolveRestaurant(u, restaurant);
     var now = nowParts();
     var self = this;
@@ -1395,7 +1576,7 @@ class FirestoreBackend {
   }
 
   async clearAllData(password) {
-    var u = this._require([ROLES.MGMT]);
+    var u = this._requireManager();
     if (!this.isGlobal(u)) throw err('العملية دي متاحة لمدير النظام فقط.');
     await this._reauth(password);
     var target = this.isGlobal(u) ? null : this.resolveRestaurant(u, '');
@@ -1435,7 +1616,7 @@ class FirestoreBackend {
     }).map(function (x) {
       var branch = x.branch || '';
       var list = Array.isArray(x.branches) ? x.branches.slice() : (branch ? [branch] : []);
-      if (branch && x.role !== ROLES.MGMT) {
+      if (branch && self._roleScope(x) === 'branch') {
         var rec = self._branchRecord(branch, x.restaurant || null);
         if (rec) branch = rec.key;
       }
@@ -1453,12 +1634,12 @@ class FirestoreBackend {
   }
 
   async listUsers() {
-    this._require([ROLES.MGMT]);
+    this._requireManager();
     return this._usersPublic();
   }
 
   async saveUser(input) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     var u = input || {};
     var rawName = cleanText(u.username, 120).replace(/\s+/g, '');
     if (!rawName) throw err('اكتب اسم المستخدم.');
@@ -1466,11 +1647,17 @@ class FirestoreBackend {
     var email = this._authEmail(rawName);
     var display = this._displayName(email);
     if (!/^[A-Za-z0-9_.-]{2,30}$/.test(display)) throw err('اسم المستخدم لازم يكون حروف/أرقام إنجليزي (2–30).');
-    var role = u.role === ROLES.MGMT || u.role === ROLES.AGENT ? u.role : ROLES.BRANCH;
+    /* الدور بيتقرأ من إعدادات الأدوار (config/roles) — مش قائمة ثابتة في الكود */
+    if (!Object.keys(this._roleMap).length) { await this.getRoleConfig(); }
+    var roleInput = cleanText(u.role, 40);
+    var role = this._resolveRoleKey(roleInput);
+    if (!role || !this._roleMap[role]) throw err('الدور المختار مش معروف. اتأكد من إعدادات الأدوار.');
     var restaurant = cleanText(u.restaurant, 40);
     if (!this.isGlobal(me)) restaurant = me.restaurant;
-    if (role === ROLES.MGMT && this.isGlobal(me) && !restaurant && u.isAdmin) restaurant = '';
-    var isAdmin = role === ROLES.MGMT ? !!u.isAdmin : false;
+    if (this._roleScope({ role: role }) === 'all' && this.isGlobal(me) && !restaurant && u.isAdmin) restaurant = '';
+    /* صلاحية "مدير النظام" من إعدادات الأدوار — المانجمنت العادي مش بيقدر يديها */
+    var roleDef = this._roleDef(role);
+    var isAdmin = roleDef.grantAdmin === true ? !!u.isAdmin : false;
     if (isAdmin && !this.isGlobal(me)) throw err('صلاحية مدير النظام متاحة لمدير النظام الحالي فقط.');
     var existing = this._findUser(email) || this._findUser(display);
     var password = String(u.password || '');
@@ -1491,7 +1678,7 @@ class FirestoreBackend {
 
     /* الفروع: قائمة فروع (اختيار واحد أو "إضافة الكل" = كل فروع المطعم) */
     var branchList = [];
-    if (role !== ROLES.MGMT) {
+    if (this._roleScope({ role: role }) !== 'all') {
       var raw = u.branches;
       if (Array.isArray(raw)) branchList = raw.map(function (x) { return cleanText(x, 60); }).filter(Boolean);
       else if (cleanText(u.branch, 60) === 'all') branchList = ['all'];
@@ -1517,7 +1704,7 @@ class FirestoreBackend {
         restaurant = recs[0].restaurant;
       }
     }
-    var branch = role === ROLES.MGMT ? '' : (branchList[0] || '');
+    var branch = this._roleScope({ role: role }) === 'all' ? '' : (branchList[0] || '');
 
     var data = {
       username: display, usernameKey: keyOf(email), email: email,
@@ -1558,7 +1745,7 @@ class FirestoreBackend {
   }
 
   async createBranchUsers() {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('إنشاء يوزرات الفروع متاح لمدير النظام فقط.');
     var created = [], self = this;
     var branches = this.state[COL.branches].filter(function (b) { return b.active !== false; });
@@ -1574,7 +1761,7 @@ class FirestoreBackend {
       var email = this._authEmail(username);
       var data = {
         username: username, usernameKey: keyOf(email), email: email, uid: '',
-        role: ROLES.BRANCH, branch: b.key, restaurant: b.restaurant,
+        role: this._defaultScopedRole(), branch: b.key, restaurant: b.restaurant,
         isAdmin: false, active: true, ver: this._randHex(8),
         createdAt: nowIso(), createdBy: me.username, seq: Date.now() + i
       };
@@ -1587,14 +1774,14 @@ class FirestoreBackend {
   }
 
   async deleteUser(username, password) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('حذف المستخدمين متاح لمدير النظام فقط.');
     await this._reauth(password);
     var target = this._findUser(username);
     if (!target) throw err('المستخدم غير موجود.');
     if (same(target.username, me.username)) throw err('مينفعش تحذف حسابك الحالي.');
-    var admins = this.state[COL.users].filter(function (x) { return x.active !== false && x.role === ROLES.MGMT && x.isAdmin; });
-    if (target.role === ROLES.MGMT && target.isAdmin && admins.length <= 1) throw err('مينفعش تحذف آخر مدير نظام نشط.');
+    var admins = this.state[COL.users].filter(function (x) { return x.active !== false && x.isAdmin; });
+    if (target.isAdmin && admins.length <= 1) throw err('مينفعش تحذف آخر مدير نظام نشط.');
     await deleteDoc(doc(this.db, COL.users, target.id));
     this.state[COL.users] = this.state[COL.users].filter(function (x) { return x.id !== target.id; });
     await this._audit(me, 'USER_DELETE', target.username, { role: target.role }, 'OK');
@@ -1603,7 +1790,7 @@ class FirestoreBackend {
 
   /* ---------------- audit / errors ---------------- */
   async getAuditLog(limitN) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('سجل العمليات متاح للأدمن العام فقط.');
     await this.hydrate();
     var entries = this.state[COL.audit].slice()
@@ -1616,7 +1803,7 @@ class FirestoreBackend {
   }
 
   async getErrorLog(limitN) {
-    this._require([ROLES.MGMT]);
+    this._requireManager();
     await this.hydrate();
     var entries = this.state[COL.errors].slice()
       .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); })
@@ -1629,7 +1816,7 @@ class FirestoreBackend {
 
   /* ---------------- branches ---------------- */
   async branchDeleteInfo(name) {
-    this._require([ROLES.MGMT]);
+    this._requireManager();
     var b = this._branchRecord(name);
     if (!b) return null;
     var rows = this.state[COL.stops].filter(function (s) { return same(s.branch, b.key); });
@@ -1646,7 +1833,7 @@ class FirestoreBackend {
   }
 
   async deleteBranch(info) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('حذف الفروع متاح لمدير النظام فقط.');
     info = info || {};
     var b = this._branchRecord(info.name, info.restaurant || null);
@@ -1719,7 +1906,7 @@ class FirestoreBackend {
   }
 
   async createBranch(info) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('إضافة الفروع متاح لمدير النظام فقط.');
     info = info || {};
     var name = cleanText(info.name, 60);
@@ -1757,7 +1944,7 @@ class FirestoreBackend {
         if (this._findUser(uemail)) throw err('اسم المستخدم موجود بالفعل.');
         var data = {
           username: this._displayName(uemail), usernameKey: keyOf(uemail), email: uemail, uid: '',
-          role: ROLES.BRANCH, branch: key, restaurant: rid, isAdmin: false, active: true,
+          role: this._defaultScopedRole(), branch: key, restaurant: rid, isAdmin: false, active: true,
           ver: this._randHex(8), createdAt: nowIso(), createdBy: me.username, seq: Date.now()
         };
         await setDoc(doc(this.db, COL.users, keyOf(uemail)), data);
@@ -1777,8 +1964,8 @@ class FirestoreBackend {
   }
 
   async saveBranchHours(branch, open, close, restaurant) {
-    var me = this._require([ROLES.MGMT, ROLES.BRANCH]);
-    if (me.role === ROLES.BRANCH) branch = me.branch;
+    var me = this._requireAny();
+    if (this._roleScope(me) === 'branch') branch = me.branch;
     var b = this._branchRecord(branch, restaurant || null);
     if (!b) throw err('الفرع غير موجود.');
     var o = parseSec(open), c = parseSec(close);
@@ -1796,8 +1983,8 @@ class FirestoreBackend {
   }
 
   async saveBranchTimes(branch, prepMin, delMin) {
-    var me = this._require([ROLES.MGMT, ROLES.BRANCH]);
-    if (me.role === ROLES.BRANCH) branch = me.branch;
+    var me = this._requireAny();
+    if (this._roleScope(me) === 'branch') branch = me.branch;
     var b = this._branchRecord(branch);
     if (!b) throw err('الفرع غير موجود.');
     var prep = Math.round(Number(prepMin)), del = Math.round(Number(delMin));
@@ -1822,7 +2009,7 @@ class FirestoreBackend {
 
   /* ---------------- restaurants ---------------- */
   async listRestaurants() {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     await this.hydrate();
     var global = this.isGlobal(me);
     return {
@@ -1837,7 +2024,7 @@ class FirestoreBackend {
   }
 
   async saveRestaurant(info) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('إدارة المطاعم متاحة لمدير النظام فقط.');
     info = info || {};
     var name = cleanText(info.name, 80);
@@ -1859,7 +2046,7 @@ class FirestoreBackend {
   }
 
   async deleteRestaurant(info) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('حذف المطاعم متاح لمدير النظام فقط.');
     info = info || {};
     var rid = cleanText(info.id, 40);
@@ -1890,7 +2077,7 @@ class FirestoreBackend {
 
   /* ---------------- menu admin ---------------- */
   async listMenu(restaurant, branch) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     await this.hydrate();
     var rid = this.resolveRestaurant(me, restaurant);
     var recs = this.state[COL.branches].filter(function (b) { return same(b.restaurant, rid); });
@@ -1912,7 +2099,7 @@ class FirestoreBackend {
   }
 
   async saveMenuItem(info) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     info = info || {};
     var rid = this.resolveRestaurant(me, info.restaurant);
     var allBranches = info.scope === 'all' || info.allBranches === true;
@@ -1964,7 +2151,7 @@ class FirestoreBackend {
    * @param items       [{item, category, price, available}]
    */
   async importMenuItems(restaurant, branchKeys, items) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('استيراد المنيو متاح لمدير النظام فقط.');
     var rid = this.resolveRestaurant(me, restaurant);
     if (!rid) throw err('اختار المطعم (البراند) الأول.');
@@ -2036,7 +2223,7 @@ class FirestoreBackend {
   }
 
   async setItemAvailability(branch, item, available, scope, restaurant) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     var rid = this.resolveRestaurant(me, restaurant);
     var allBranches = scope === 'all' || !branch || keyOf(branch) === 'all';
     var rec = allBranches ? null : this._branchRecord(branch, rid);
@@ -2079,7 +2266,7 @@ class FirestoreBackend {
   }
 
   async deleteMenuItem(restaurant, branch, item) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('حذف الأصناف متاح لمدير النظام فقط.');
     var rid = this.resolveRestaurant(me, restaurant);
     var branchKey = cleanText(branch, 80);
@@ -2132,7 +2319,7 @@ class FirestoreBackend {
 
   /* ---------------- reasons admin ---------------- */
   async listReasons(restaurant, branch) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     await this.hydrate();
     var rid = this.resolveRestaurant(me, restaurant);
     if (keyOf(branch) === 'all') {
@@ -2144,7 +2331,7 @@ class FirestoreBackend {
   }
 
   async addReason(name, restaurant, branch) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('إضافة الأسباب متاحة لمدير النظام فقط.');
     var rid = this.resolveRestaurant(me, restaurant);
     name = cleanText(name, 600);
@@ -2178,7 +2365,7 @@ class FirestoreBackend {
   }
 
   async saveReason(info) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('تعديل الأسباب متاح لمدير النظام فقط.');
     info = info || {};
     var rid = this.resolveRestaurant(me, info.restaurant);
@@ -2212,7 +2399,7 @@ class FirestoreBackend {
   }
 
   async deleteReason(name, restaurant, branch) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     if (!this.isGlobal(me)) throw err('حذف الأسباب متاح لمدير النظام فقط.');
     var rid = this.resolveRestaurant(me, restaurant);
     name = cleanText(name, 600);
@@ -2256,7 +2443,7 @@ class FirestoreBackend {
 
   /* ---------------- daily hours ---------------- */
   async getBranchDailyHours() {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     await this.hydrate();
     var self = this;
     var recs = this.state[COL.branches].filter(function (b) {
@@ -2294,7 +2481,7 @@ class FirestoreBackend {
   }
 
   async saveBranchDailyHours(branch, days) {
-    var me = this._require([ROLES.MGMT]);
+    var me = this._requireManager();
     var b = this._branchRecord(branch);
     if (!b) throw err('الفرع غير موجود أو مش تابع للمطعم.');
     if (!Array.isArray(days) || days.length !== 7) throw err('لازم تبعت مواعيد 7 أيام.');
@@ -2326,7 +2513,7 @@ class FirestoreBackend {
 
   /* ---------------- shift rollover ---------------- */
   async getShiftLog(limitN, branch, restaurant) {
-    this._require([ROLES.MGMT]);
+    this._requireManager();
     await this.hydrate();
     var entries = this.state[COL.shift].slice()
       .filter(function (x) {
@@ -2347,8 +2534,8 @@ class FirestoreBackend {
   }
 
   async runShiftRollover(branch, force, restaurant) {
-    var me = this._require([ROLES.MGMT, ROLES.BRANCH]);
-    if (me.role === ROLES.BRANCH) branch = me.branch;
+    var me = this._requireAny();
+    if (this._roleScope(me) === 'branch') branch = me.branch;
     var b = this._branchRecord(branch, restaurant || null);
     if (!b) throw err('الفرع غير موجود.');
     var now = nowParts();
@@ -2432,6 +2619,8 @@ const ACTIONS = {
   getStopOptions: 'getStopOptions',
   clearAllData: 'clearAllData',
   listUsers: 'listUsers',
+  getRoleConfig: 'getRoleConfig',
+  registerNewUser: 'registerNewUser',
   saveUser: 'saveUser',
   changeMyPassword: 'changeMyPassword',
   createBranchUsers: 'createBranchUsers',

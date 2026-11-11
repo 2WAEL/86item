@@ -82,9 +82,20 @@ service cloud.firestore {
       // قراءة: صاحب الحساب نفسه + الأدمن + المانجمنت
       allow read: if signedIn() && (userId == myEmail() || isAdmin() || isManager());
 
-      // ⚠️ إنشاء: الأدمن/المانجمنت بس — ممنوع أي حد ينشئ حساب لنفسه
-      //    (مفيش تسجيل ذاتي: الإيميل لازم يكون معتمد من الأدمن مسبقًا)
-      allow create: if isManager() && request.resource.data.isAdmin == false;
+      // ⚠️ إنشاء — حالتين بس:
+      //  (أ) الأدمن/المانجمنت ينشئ حساب لحد تاني (من غير isAdmin)
+      //  (ب) المستخدم الجديد ينشئ ملفه الأول لنفسه بس: موقوف + أقل صلاحية + من غير فروع
+      //      (التسجيل الذاتي → الحساب بينتظر موافقة الإدارة)
+      allow create: if (
+        (isManager() && request.resource.data.isAdmin == false)
+        || (
+          userId == myEmail()
+          && request.resource.data.active == false
+          && request.resource.data.isAdmin == false
+          && request.resource.data.role == 'agent'
+          && (request.resource.data.branches == null || request.resource.data.branches.size() == 0)
+        )
+      );
 
       // تعديل:
       //  - الأدمن: أي حاجة
@@ -103,6 +114,13 @@ service cloud.firestore {
 
       // حذف: الأدمن بس
       allow delete: if isAdmin();
+    }
+
+    /* ======================= إعدادات الأدوار ======================= */
+    // تعريف الأدوار (مصدر واحد للحقيقة) — المانجمنت يقرأ، الأدمن بس يعدّل
+    match /config/{docId} {
+      allow read: if isManager();
+      allow write: if isAdmin();
     }
 
     /* ======================= قفل تهيئة المدير ======================= */

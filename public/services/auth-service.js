@@ -6,7 +6,7 @@
  * ============================================================ */
 
 import {
-  signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
   updatePassword, sendPasswordResetEmail,
   EmailAuthProvider, reauthenticateWithCredential
 } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
@@ -96,6 +96,37 @@ export function createAuthService(auth, fs) {
     return res;
   }
 
+  /**
+   * تسجيل حساب جديد (Registration):
+   *  1) ينشئ الحساب في Firebase Auth
+   *  2) ينشئ ملفه الشخصي في Firestore بحالة "موقوف" (active: false)
+   *     ومن غير أي صلاحيات أو فروع → الحساب بينتظر موافقة الإدارة
+   *  3) بيخرج من الجلسة فورًا (مفيش دخول قبل الاعتماد)
+   */
+  async function register(username, password) {
+    var email = authEmail(username);
+    if (!email) throw new Error('اكتب الإيميل.');
+    var pass = String(password || '');
+    if (pass.length < 6) throw new Error('كلمة السر لازم 6 حروف/أرقام على الأقل.');
+    var cred;
+    try {
+      cred = await createUserWithEmailAndPassword(auth, email, pass);
+    } catch (e) {
+      var code = (e && e.code) ? String(e.code) : '';
+      if (code === 'auth/email-already-in-use') throw new Error('الحساب ده موجود بالفعل. سجّل دخول بدل التسجيل.');
+      if (code === 'auth/weak-password') throw new Error('كلمة السر ضعيفة — لازم 6 حروف على الأقل.');
+      if (code === 'auth/operation-not-allowed') throw new Error('تسجيل الحسابات مقفول. من Firebase Console: Authentication ▸ Sign-in method ▸ Email/Password ▸ Enable.');
+      throw new Error(authErrorMessage(e));
+    }
+    var res = await fs.registerNewUser(cred && cred.user ? cred.user : null, username);
+    await signOutSafe();
+    return {
+      ok: true,
+      pending: !!res.pending,
+      message: res.message || 'تم إنشاء حسابك بنجاح. حسابك بانتظار موافقة الإدارة.'
+    };
+  }
+
   /** استعادة جلسة موجودة (بعد تحديث الصفحة) */
   async function restore() {
     try {
@@ -159,6 +190,7 @@ export function createAuthService(auth, fs) {
   return {
     auth: auth,
     login: login,
+    register: register,
     logout: logout,
     restore: restore,
     onAuthChange: onAuthChange,
