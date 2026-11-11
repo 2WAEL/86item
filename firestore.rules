@@ -76,33 +76,15 @@ service cloud.firestore {
       return isActive() && (isManager() || inMyBranches(branchKey));
     }
 
-    // قفل تهيئة المدير — أول واحد بس ياخده
-    function lockOwnedByMe() {
-      return exists(/databases/$(database)/documents/system/adminLock)
-        && get(/databases/$(database)/documents/system/adminLock).data.uid == myUid();
-    }
-
     /* ======================= الملفات الشخصية ======================= */
 
     match /users/{userId} {
       // قراءة: صاحب الحساب نفسه + الأدمن + المانجمنت
       allow read: if signedIn() && (userId == myEmail() || isAdmin() || isManager());
 
-      // إنشاء:
-      //  (أ) حساب جديد لنفسه: دور agent + موقوف + بدون صلاحيات إدارية (منع تصعيد الصلاحيات)
-      //  (ب) أول مدير نظام: لازم يكون ماسك قفل التهيئة
-      //  (ج) المانجمنت ينشئ حساب لغيره (من غير isAdmin)
-      allow create: if signedIn() && (
-        (userId == myEmail()
-          && request.resource.data.role == 'agent'
-          && request.resource.data.isAdmin == false
-          && request.resource.data.active == false)
-        || (userId == myEmail()
-          && request.resource.data.role == 'management'
-          && request.resource.data.isAdmin == true
-          && lockOwnedByMe())
-        || (isManager() && request.resource.data.isAdmin == false)
-      );
+      // ⚠️ إنشاء: الأدمن/المانجمنت بس — ممنوع أي حد ينشئ حساب لنفسه
+      //    (مفيش تسجيل ذاتي: الإيميل لازم يكون معتمد من الأدمن مسبقًا)
+      allow create: if isManager() && request.resource.data.isAdmin == false;
 
       // تعديل:
       //  - الأدمن: أي حاجة
@@ -124,14 +106,10 @@ service cloud.firestore {
     }
 
     /* ======================= قفل تهيئة المدير ======================= */
+    /* بقى بدون استخدام: مفيش تسجيل ذاتي خالص — الحسابات بتتعمل من ⚙️ إدارة المستخدمين */
 
     match /system/adminLock {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
-      allow create: if signedIn()
-        && !exists(/databases/$(database)/documents/system/adminLock)
-        && request.resource.data.uid == request.auth.uid;
-      allow update: if false;
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow read, write: if false;
     }
 
     /* ======================= المطاعم ======================= */

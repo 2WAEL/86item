@@ -35,6 +35,10 @@ import {
   signOut, onAuthStateChanged, updatePassword, sendPasswordResetEmail,
   EmailAuthProvider, reauthenticateWithCredential
 } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
+import {
+  ROLES as RB_ROLES, isManagerProfile, isAdminUser, profileBranches,
+  canAccessBranch, visibleBranches, visibleRestaurants, notificationVisible
+} from './rbac-service.js';
 
 const COL = {
   restaurants: 'restaurants',
@@ -173,9 +177,13 @@ function fsError(e, where) {
 /* ============================================================
  *  Backend
  * ============================================================ */
-export function createBackend(db, opts) {
+/** خدمة طبقة البيانات (Firestore) — بترجع بيانات فقط، من غير أي لمس للواجهة */
+export function createFirestoreService(db, opts) {
   return new FirestoreBackend(db, opts || {});
 }
+
+/* اسم قديم (متوافق) */
+export const createBackend = createFirestoreService;
 
 class FirestoreBackend {
   constructor(db, opts) {
@@ -367,125 +375,44 @@ class FirestoreBackend {
     return er2;
   }
 
-  /** بيعمل ملف شخصي (profile) لليوزر الجديد في Firestore */
-  async _ensureProfile(fbUser, requestedName) {
-    var email = String((fbUser && fbUser.email) || '').toLowerCase();
-    var existing = email ? this._findUser(email) : null;
-    if (existing) {
-      /* لو الـ uid اتغيّر (حساب اتعمل من جديد بنفس الإيميل) نحدّثه
-         — ده حق مساعدي، فأي رفض من القواعد ما بيوقفش الدخول */
-      if (fbUser && fbUser.uid && existing.uid !== fbUser.uid) {
-        try {
-          await updateDoc(doc(this.db, COL.users, existing.id), { uid: fbUser.uid, updatedAt: nowIso() });
-          existing.uid = fbUser.uid;
-        } catch (e) { /* القواعد ما سمحتش — مش مهم */ }
-      }
-      return { profile: existing, created: false };
-    }
-
-    /* أول حساب في النظام كله → مدير النظام */
-    var isFirst = !this.state[COL.users].length;
-    var name = norm(requestedName) || this._displayName(email);
-    if (!this._isValidEmail(email)) throw err('الإيميل مش صالح. استخدم إيميل صحيح زي name@example.com.');
-    if (!/^[A-Za-z0-9_.-]{2,30}$/.test(name)) throw err('اسم المستخدم لازم يكون حروف/أرقام إنجليزي (2–30).');
-
-    var uid = (fbUser && fbUser.uid) || '';
-    var docId = keyOf(email) || keyOf(name);
-
-    if (isFirst) {
-      /* أول حساب: بناخد قفل التهيئة (أول واحد بس ياخده) ونعمله ملف مدير نظام.
-         لو القفل اتاخد قبل كده → الحساب بيتعمل عادي وموقوف زي أي حد. */
-      try {
-        await setDoc(doc(this.db, COL.system, 'adminLock'), {
-          uid: uid, email: email, at: nowIso()
-        });
-      } catch (e) { /* القفل موجود → هنكمل بحساب عادي */ }
-      try {
-        await setDoc(doc(this.db, COL.users, docId), {
-          username: name, usernameKey: keyOf(name), email: email, uid: uid,
-          role: ROLES.MGMT, branch: '', branches: [], restaurant: '', isAdmin: true,
-          active: true, ver: this._randHex(8),
-          createdAt: nowIso(), createdBy: 'auth', seq: Date.now()
-        });
-        await this._reload(COL.users);
-        return { profile: this._findUser(email) || this._findUser(name), created: true, isFirst: true };
-      } catch (e) {
-        /* القواعد رفضت (يعني القفل مش ملكنا) → حساب عادي موقوف */
-        isFirst = false;
-      }
-    }
-
-    /* حساب عادي: دور agent + موقوف لحد ما الأدمن يفعّله */
-    var data = {
-      username: name, usernameKey: keyOf(name), email: email, uid: uid,
-      role: ROLES.AGENT, branch: '', branches: [], restaurant: '', isAdmin: false,
-      active: false, ver: this._randHex(8),
-      createdAt: nowIso(), createdBy: 'auth', seq: Date.now()
-    };
-    await setDoc(doc(this.db, COL.users, docId), data).catch(function (e) {
-      /* أشهر خطأ هنا: القواعد بتمنع الكتابة في users */
-      throw fsError(e, 'إنشاء ملف الحساب') || e;
-    });
-    await this._reload(COL.users);
-    return { profile: this._findUser(email) || this._findUser(name), created: true, isFirst: isFirst };
-  }
+  /**
+   * ⚠️ مفيش إنشاء تلقائي لحساب هنا (قيد أمني):
+   *    الحسابات بتتعمل من ⚙️ إدارة المستخدمين فقط (الأدمن).
+   *    أي إيميل مش موجود في "users" أو موقوف → يُرفض الدخول فورًا.
+   */
 
   /**
-   * استعادة الجلسة من Firebase Auth (بعد تحديث الصفحة)
-   * — بتلاقي الملف الشخصي بس؛ إنشاء الحسابات شغل مسار الدخول في الواجهة
+   * استعادة الجلسة من Firestore (بعد تحديث الصفحة)
+   * — بتلاقي الملف الشخصي بس؛ لو مش موجود/موقوف → false (مش مسموح بالدخول)
    */
-  async restore(token) {
+  async restoreSession(fbUser) {
     try {
-      /* Firebase Auth بيستعيد الجلسة بشكل غير متزامن — لازم ننتظره */
-      if (this.auth && typeof this.auth.authStateReady === 'function') {
-        try { await this.auth.authStateReady(); } catch (e) { }
-      }
-      var fbUser = this.auth && this.auth.currentUser ? this.auth.currentUser : null;
-      if (!fbUser) return false;
-      /* الاستعادة بتلاقي الملف الشخصي بس — إنشاء الحسابات شغل مسار الدخول */
+      var user = fbUser || (this.auth && this.auth.currentUser ? this.auth.currentUser : null);
+      if (!user) return false;
       /* قراءة محدّثة للملفات الشخصية (لو اتوقّف الحساب من جهاز تاني لازم يطلع فورًا) */
       await this._reload(COL.users);
-      var profile = this._findUserByUid(fbUser.uid) || this._findUser(fbUser.email);
+      var profile = this._findUserByUid(user.uid) || this._findUser(user.email);
       if (!profile || profile.active === false) return false;
-      this.session = { user: profile, ver: profile.ver || '', uid: fbUser.uid || '' };
+      this.session = { user: profile, ver: profile.ver || '', uid: user.uid || '' };
       return true;
     } catch (e) { return false; }
   }
 
-  /** لو Firebase Auth قفل الحساب من برّه → الواجهة ترجع لشاشة الدخول */
-  onAuthChange(cb) {
-    if (!this.auth) return function () { };
-    return onAuthStateChanged(this.auth, function (user) {
-      try { cb(user || null); } catch (e) { }
-    });
-  }
-
-  /** إعادة تأكيد الهوية بكلمة السر (للعمليات الحساسة) — عن طريق Firebase Auth */
+  /** إعادة تأكيد الهوية بكلمة السر (للعمليات الحساسة) — عن طريق خدمة المصادقة */
   async _reauth(password) {
-    var fbUser = this.auth && this.auth.currentUser;
-    if (!fbUser) throw err('جلسة غير صالحة. سجّل دخول تاني.');
-    if (!String(password || '')) throw err('كلمة السر غلط.');
-    try {
-      var cred = EmailAuthProvider.credential(fbUser.email, String(password));
-      await reauthenticateWithCredential(fbUser, cred);
-      return true;
-    } catch (e) {
-      throw err('كلمة السر غلط.');
+    if (this.authService && typeof this.authService.reauthenticate === 'function') {
+      return this.authService.reauthenticate(password);
     }
+    throw err('خدمة المصادقة غير متاحة.');
   }
 
-  /** تغيير باسورد الحساب الحالي (Firebase Auth يسمح بيه) */
+  /** تغيير باسورد الحساب الحالي (عن طريق خدمة المصادقة) */
   async changeMyPassword(newPass) {
     var u = this._require();
-    newPass = String(newPass || '');
-    if (newPass.length < 6) throw err('كلمة السر لازم 6 حروف/أرقام على الأقل.');
-    var fbUser = this.auth && this.auth.currentUser;
-    if (!fbUser) throw err('جلسة غير صالحة. سجّل دخول تاني.');
-    try {
-      await updatePassword(fbUser, newPass);
-    } catch (e) {
-      throw this._authError(e);
+    if (!this.authService || typeof this.authService.changeMyPassword !== 'function') {
+      throw err('خدمة المصادقة غير متاحة.');
     }
+    await this.authService.changeMyPassword(newPass);
     await this._audit(u, 'PASSWORD_CHANGE', u.username, '', 'OK');
     return { ok: true };
   }
@@ -545,9 +472,14 @@ class FirestoreBackend {
   /**
    * استلام المستخدم اللي اتصادق عليه (المصادقة نفسها بتتم في الواجهة
    * عبر signInWithEmailAndPassword) وتجهيز الملف الشخصي + الداتا.
+   *
+   * ⚠️ مفيش أي إنشاء تلقائي لحساب هنا: الإيميل لازم يكون **مسجّل ومفعّل
+   *   مسبقًا** في collection "users" (يعني معتمد من الأدمن).
+   *   لو مش موجود أو موقوف → بنرجّع blocked + بنوقّع الخروج من Auth.
+   *
    * بترجع:
-   *   { ok:true, token, data }  → يكمّل للداشبورد
-   *   { blocked:true, message } → الحساب موقوف/محتاج تفعيل (مفيش داتا)
+   *   { ok:true, token, data }      → يكمّل للداشبورد
+   *   { blocked:true, message }     → الحساب غير معتمد/موقوف (مفيش داتا)
    */
   async adoptAuthenticatedUser(fbUser, requestedName) {
     if (!fbUser) throw err('تعذر تسجيل الدخول. حاول تاني.');
@@ -555,21 +487,33 @@ class FirestoreBackend {
   }
 
   async _adopt(fbUser, requestedName) {
-    /* قراءة كاملة وحديثة لكل المجموعات (بالتوازي) عشان الداتا تكون جاهزة فورًا */
     await this.hydrate(true);
-    var res = await this._ensureProfile(fbUser, requestedName);
-    var profile = res.profile;
-    if (!profile) throw err('تعذر تجهيز ملف الحساب. كلّم مدير النظام.');
+    var email = String((fbUser && fbUser.email) || '').toLowerCase();
+    if (!email) throw err('تعذر تحديد بريد الحساب. حاول تاني.');
 
-    if (profile.active === false) {
-      await this._audit(null, 'SIGNUP_PENDING', profile.email || profile.username, { role: profile.role }, 'PENDING');
+    /* الملف الشخصي لازم يكون موجود (معتمد من الأدمن) */
+    var profile = this._findUserByUid(fbUser.uid) || this._findUser(email);
+    if (!profile) {
       this.session = null;
       return {
         ok: false, blocked: true,
-        message: res.created
-          ? 'تم إنشاء حسابك بنجاح، بس محتاج تفعيل من مدير النظام قبل ما تدخل.'
-          : 'حسابك موقوف. كلّم مدير النظام.'
+        message: 'عذراً، هذا البريد غير مسجل أو بانتظار موافقة الإدارة. كلّم مدير النظام.'
       };
+    }
+    if (profile.active === false) {
+      this.session = null;
+      return {
+        ok: false, blocked: true,
+        message: 'حسابك موقوف. كلّم مدير النظام عشان يفعّله.'
+      };
+    }
+
+    /* الحساب مسجّل ومفعّل → بنحدّث الـ uid (تسجيل مساعد) ونجهّز الجلسة */
+    if (fbUser.uid && profile.uid !== fbUser.uid) {
+      try {
+        await updateDoc(doc(this.db, COL.users, profile.id), { uid: fbUser.uid, updatedAt: nowIso() });
+        profile.uid = fbUser.uid;
+      } catch (e) { /* القواعد ما سمحتش — مش مهم */ }
     }
 
     /* أول حساب في النظام → نعمل سبع البذرة (مطعم + فروع + أسباب + أوقات) */
@@ -578,13 +522,14 @@ class FirestoreBackend {
       await this._audit(profile, 'BOOTSTRAP_ADMIN', profile.username, { first: true }, 'OK');
     }
 
-    this.session = { user: profile, ver: profile.ver || '', uid: (fbUser && fbUser.uid) || '' };
+    this.session = { user: profile, ver: profile.ver || '', uid: fbUser.uid || '' };
     await this._audit(profile, 'LOGIN', profile.username, { restaurant: profile.restaurant || '' }, 'OK');
     return {
       ok: true,
-      token: 'auth:' + ((fbUser && fbUser.uid) || profile.username),
+      token: 'auth:' + (fbUser.uid || profile.username),
       username: profile.username,
-      email: profile.email || '',
+      role: profile.role,
+      branches: Array.isArray(profile.branches) ? profile.branches : [],
       data: this.scopedPayload('')
     };
   }
@@ -679,17 +624,16 @@ class FirestoreBackend {
 
   _allowedBranches(u, rid, scoped) {
     var self = this;
-    /* فروع اليوزر (قائمة — ممكن يبقى مربوط بأكثر من فرع) */
-    var mine = Array.isArray(u.branches) ? u.branches : (u.branch ? [u.branch] : []);
-    var mineKeys = {};
-    mine.forEach(function (k) { mineKeys[keyOf(k)] = 1; });
+    /* العزل بيتحسب من خدمة الصلاحيات (rbac-service) — مصدر واحد للحقيقة */
     return this.state[COL.branches].filter(function (b) {
       if (b.active === false) return false;
+      /* العزل بالبراند: يوزر غير عام بيشوف برانده بس */
       if (!self.isGlobal(u) || scoped) {
         if (!same(b.restaurant, rid)) return false;
       }
+      /* العزل بالفرع: الديسباتشر/الايجينت بيشوفوا فروعهم بس */
       if (u.role === ROLES.BRANCH || u.role === ROLES.AGENT) {
-        return !!mineKeys[keyOf(b.key)] || !!mineKeys[keyOf(b.name)];
+        return canAccessBranch(u, b.key) || canAccessBranch(u, b.name);
       }
       return true;
     });
@@ -1015,8 +959,8 @@ class FirestoreBackend {
       });
     });
 
-    var restaurants = this.state[COL.restaurants]
-      .filter(function (r) { return global ? true : same(r.id, u.restaurant); })
+    /* المطاعم: المدير العام يشوف الكل، غيره برانده بس (عزل البراندات) */
+    var restaurants = visibleRestaurants(u, this.state[COL.restaurants])
       .map(function (r) { return { id: r.id, name: r.name, active: r.active !== false }; });
 
     return {
@@ -1083,15 +1027,9 @@ class FirestoreBackend {
 
   /* ---------------- notifications ---------------- */
   _notifVisible(n, u) {
-    if (u.role !== ROLES.MGMT) {
-      if (n.restaurant && u.restaurant && !same(n.restaurant, u.restaurant)) return false;
-    }
-    if (u.role === ROLES.BRANCH || u.role === ROLES.AGENT) {
-      if (n.branch && u.branch && !same(n.branch, u.branch)) return false;
-    }
-    if (Array.isArray(n.roles) && n.roles.length && n.roles.indexOf(u.role) < 0) return false;
-    if (n.targetUser && !same(n.targetUser, u.username)) return false;
-    return true;
+    /* العزل كله في خدمة الصلاحيات (rbac-service):
+       لا تسريب إشعارات بين براندات ولا بين فروع نفس البراند. */
+    return notificationVisible(u, n);
   }
 
   _notifications(u, limitN) {
@@ -1605,8 +1543,18 @@ class FirestoreBackend {
       var fresh = this._findUser(email);
       if (fresh) { this.session.user = fresh; this.session.ver = fresh.ver || ''; }
     }
-    await this._audit(me, existing ? 'USER_UPDATE' : 'USER_CREATE', email, { role: role, active: data.active }, 'OK');
-    return this._usersPublic();
+    /* يوزر جديد: نحاول نبعتله إيميل "اضبط كلمة السر" (best-effort) */
+    var resetNote = '';
+    if (!existing && this.authService && typeof this.authService.sendPasswordReset === 'function') {
+      try {
+        var rs = await this.authService.sendPasswordReset(email);
+        resetNote = rs && rs.ok ? 'reset-sent' : 'no-auth-account';
+      } catch (e) { resetNote = 'no-auth-account'; }
+    }
+    await this._audit(me, existing ? 'USER_UPDATE' : 'USER_CREATE', email, { role: role, active: data.active, reset: resetNote }, 'OK');
+    var list = this._usersPublic();
+    if (!existing) list.resetNote = resetNote;
+    return list;
   }
 
   async createBranchUsers() {
@@ -2007,6 +1955,84 @@ class FirestoreBackend {
     this._emitSoon();
     await this._audit(me, 'MENU_SAVE', rid + '/' + (allBranches ? 'ALL' : branchKey) + '/' + item, { available: avail, price: price }, 'OK');
     return { ok: true, item: item, available: avail, scope: allBranches ? 'all' : branchKey, data: this.scopedPayload(rid) };
+  }
+
+  /**
+   * استيراد منيو من ملف Excel (أو CSV) لفرع واحد أو كل فروع البراند.
+   * @param restaurant  معرّف البراند (brandId)
+   * @param branchKeys  قائمة مفاتيح الفروع (branchId)
+   * @param items       [{item, category, price, available}]
+   */
+  async importMenuItems(restaurant, branchKeys, items) {
+    var me = this._require([ROLES.MGMT]);
+    if (!this.isGlobal(me)) throw err('استيراد المنيو متاح لمدير النظام فقط.');
+    var rid = this.resolveRestaurant(me, restaurant);
+    if (!rid) throw err('اختار المطعم (البراند) الأول.');
+    if (!Array.isArray(branchKeys) || !branchKeys.length) throw err('اختار فرع واحد على الأقل.');
+    if (!Array.isArray(items) || !items.length) throw err('الملف مفيهوش أصناف.');
+
+    /* تنظيف + تحقق من كل صنف */
+    var clean = [], seen = {};
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i] || {};
+      var name = cleanText(it.item, 200);
+      if (!name) continue;
+      var k = keyOf(name);
+      if (seen[k]) continue;          /* تكرار في نفس الملف */
+      seen[k] = 1;
+      var price = num(it.price);
+      clean.push({
+        item: name,
+        category: cleanText(it.category, 100),
+        price: (price !== null && price >= 0) ? price : null,
+        available: it.available !== false
+      });
+    }
+    if (!clean.length) throw err('مفيش أصناف صالحة في الملف.');
+
+    /* الفروع لازم تكون موجودة وتتبع البراند المختار */
+    var self = this, recs = [];
+    for (var b = 0; b < branchKeys.length; b++) {
+      var rec = this._branchRecord(branchKeys[b], rid);
+      if (!rec) throw err('في فرع مش موجود أو مش تابع للمطعم المختار.');
+      recs.push(rec);
+    }
+
+    /* الكتابة: صنف واحد واحد (أو update لو موجود) */
+    var written = 0;
+    for (var bi = 0; bi < recs.length; bi++) {
+      var branchKey = recs[bi].key;
+      for (var ci = 0; ci < clean.length; ci++) {
+        var item = clean[ci];
+        var existing = this.state[COL.menu].filter(function (r) {
+          return same(r.restaurant, rid) && same(r.branch, branchKey) && keyOf(r.item) === keyOf(item.item);
+        })[0];
+        var row = {
+          restaurant: rid, branch: branchKey, item: item.item, itemKey: keyOf(item.item),
+          category: item.category, price: item.price, available: item.available, active: true,
+          updatedBy: me.username, updatedAt: nowIso()
+        };
+        if (existing) {
+          await setDoc(doc(self.db, COL.menu, existing.id), row, { merge: true });
+        } else {
+          row.seq = Date.now() + ci;
+          await addDoc(collection(self.db, COL.menu), row);
+        }
+        written++;
+      }
+    }
+    await this._reload(COL.menu);
+    this.rev++;
+    this._emitSoon();
+    await this._audit(me, 'MENU_IMPORT', rid + '/' + recs.map(function (r) { return r.key; }).join(','), {
+      items: clean.length, branches: recs.length, written: written
+    }, 'OK');
+    return {
+      ok: true, written: written, items: clean.length,
+      branches: recs.map(function (r) { return { key: r.key, name: r.name }; }),
+      restaurant: rid,
+      data: this.scopedPayload(rid)
+    };
   }
 
   async setItemAvailability(branch, item, available, scope, restaurant) {
@@ -2421,6 +2447,7 @@ const ACTIONS = {
   deleteRestaurant: 'deleteRestaurant',
   listMenu: 'listMenu',
   saveMenuItem: 'saveMenuItem',
+  importMenuItems: 'importMenuItems',
   setItemAvailability: 'setItemAvailability',
   deleteMenuItem: 'deleteMenuItem',
   listReasons: 'listReasons',

@@ -27,14 +27,26 @@ node scripts/check-no-secrets.mjs
 
 ## 2) طبقات الحماية المطبّقة
 
-### (أ) Firebase Authentication
-- دخول بـ **Email + Password** فقط (التطبيق مش بيستخدم Anonymous sign-in).
-- الجلسة متخزّنة في `sessionStorage` (بتنتهي لما يقفل التبويب).
-- `setPersistence(auth, browserSessionPersistence)`.
+### (أ) Firebase Authentication — **قائمة معتمدين (Allow-list)**
+- **مفيش تسجيل ذاتي خالص**: التطبيق مش فيه `createUserWithEmailAndPassword` خالص.
+  الحساب الجديد بيتعمل من **⚙️ إدارة المستخدمين** (الأدمن) + حساب Firebase Auth بنفس الإيميل.
+- **بوابة الدخول**: فورًا بعد `signInWithEmailAndPassword` بيتشيك على collection `users`:
+  - الإيميل **مش موجود** → رفض + `signOut()` + «عذراً، هذا البريد غير مسجل أو بانتظار موافقة الإدارة».
+  - الإيميل **موجود بس `active == false`** → رفض + `signOut()` + «حسابك موقوف».
+  - الإيميل **موجود ومفعّل** → توجيه للوحة التحكم حسب الدور (`management` / `branch` / `agent`) والفروع.
+- دخول بـ **Email + Password** بس · الجلسة في `sessionStorage` · `setPersistence(auth, browserSessionPersistence)`.
 - **إعادة تأكيد الهوية** للعمليات الحرجة (مسح كل الداتا / حذف يوزر / حذف فرع / حذف مطعم / تغيير باسورد) عبر `reauthenticateWithCredential` — يعني لازم الباسورد يتأكد حتى لو الجلسة مفتوحة.
 - كلمات السر **مش بتتحفظ في Firestore** إطلاقًا — Firestore فيه الملف الشخصي بس (دور/فروع/مطعم/تفعيل).
 
-### (ب) Firestore Security Rules (`firestore.rules`)
+### (ب) طبقة الخدمات (`public/services/`)
+كل اتصال Firebase + منطق الصلاحيات + معالجة Excel في **خدمات مستقلة**:
+`firebase-service` (تهيئة) · `auth-service` (المصادقة + البوابة) · `firestore-service` (البيانات) ·
+`rbac-service` (الصلاحيات والعزل) · `excel-service` (Excel) · `menu-service` (النيو).
+**قيد أساسي: مفيش أي لمس للواجهة (DOM) في أي ملف خدمة** — مفيش `document.getElementById`
+ولا `innerHTML` ولا تغيير HTML/CSS. الخدمة بترجع بيانات/وعود بس.
+الواجهة (`index.html`) مسؤولة عن الرسم + Event Listeners + استدعاء الخدمات.
+
+### (ج) Firestore Security Rules (`firestore.rules`)
 الكل محسوب بالـ Rules (مش بس في الـ UI):
 
 | القاعدة | الفايدة |
@@ -87,7 +99,23 @@ const APP_CHECK_SITE_KEY = '';   // ← مفتاح reCAPTCHA v3 من Console
 ## 4) تشغيل الفحوصات
 
 ```bash
-node scripts/check-no-secrets.mjs    # فحص الأسرار
+node scripts/check-no-secrets.mjs    # فحص الأسرار في كود الواجهة
 ```
 
 الأمر بيشتغل كمان تلقائي مع كل push على GitHub (workflow: Security Scan).
+
+### اختبار القواعد (اختياري — محتاج Emulator)
+
+```bash
+firebase emulators:start --only firestore --project demo-test
+node scripts/test-rules.mjs          # 31 حالة: تسجيل ذاتي، تصعيد صلاحيات، عزل فروع/براندات، deny-by-default
+```
+
+الاختبار بيتحقق من:
+- زائر بدون تسجيل → كل وصول مرفوض.
+- مستخدم مش في القائمة المعتمدة → كل وصول مرفوض.
+- حساب موقوف → كل وصول مرفوض (غير ملفه الشخصي).
+- ديسباتشر → فرعه بس (فروع/منيو/سجلات إيقاف) + سجلات الأخطاء/العمليات مرفوضة.
+- **منع التسجيل الذاتي** + **منع تصعيد الصلاحيات** (نفسه لـ admin).
+- الأدمن يشوف كل حاجة، والمانجمنت (مش مدير) **مش** يقدر يدي `isAdmin`.
+- أي collection جديدة → مرفوضة (deny-by-default).

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <base target="_top">
@@ -374,6 +374,7 @@ details.branch .body{padding:0 18px 16px}
         <hr data-roles="management">
         <button data-act="restaurants" data-roles="management">🍽️ إدارة المطاعم</button>
         <button data-act="menu" data-roles="management">📋 إدارة المنيو والتوفر</button>
+        <button data-act="menuImport" data-roles="management">📥 رفع منيو من Excel</button>
         <button data-act="reasons" data-roles="management">🏷️ إدارة أسباب التوقف</button>
         <button data-act="rollover" data-roles="management branch">🌙 إغلاق اليوم وترحيل الشيفت</button>
         <hr data-roles="management">
@@ -578,108 +579,42 @@ details.branch .body{padding:0 18px 16px}
 
 <script type="module">
 /* =====================================================
-   Firebase (CDN SDK v13.2.0) — التطبيق بقى Standalone
-   (Firestore للداتا + Authentication للدخول)
+   طبقة الخدمات (Services) — كل اتصال Firebase هنا
+   ------------------------------------------------------------
+   • services/firebase-service.js  : تهيئة App/Auth/Firestore
+   • services/auth-service.js      : الدخول + بوابة القائمة المعتمدة
+   • services/firestore-service.js : طبقة البيانات (قراءة/كتابة/استماع)
+   • services/rbac-service.js      : منطق الصلاحيات والعزل
+   • services/excel-service.js     : بناء/قراءة ملفات Excel
+   • services/menu-service.js      : المنيو + الاستيراد من Excel
+   -------------------------------------------------------
+   الواجهة (الملف ده) مسؤولة فقط عن: الرسم +Event Listeners
+   + استدعاء الخدمات. مفيش أي كتابة مباشرة على Firestore هنا.
    ===================================================== */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-analytics.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js";
-import {
-  getAuth, setPersistence, browserSessionPersistence,
-  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut
-} from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
-import { createBackend } from "./firebase-backend.js";
+import { app, auth, db, firebaseConfig, AUTH_EMAIL_DOMAIN } from "./services/firebase-service.js";
+import { createAuthService, authErrorMessage, authEmail } from "./services/auth-service.js";
+import { createFirestoreService } from "./services/firestore-service.js";
+import { createMenuService } from "./services/menu-service.js";
+import { buildXlsxBlob_, xlsxSafe_ } from "./services/excel-service.js";
+import { ROLE_LABELS } from "./services/rbac-service.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyD1MFyE26r5GhQANTsTSpAdwsAiGC4zShs",
-  authDomain: "item-f8564.firebaseapp.com",
-  projectId: "item-f8564",
-  storageBucket: "item-f8564.firebasestorage.app",
-  messagingSenderId: "573297826644",
-  appId: "1:573297826644:web:452247eda62f7c66e986c1",
-  measurementId: "G-Q87D509P3Z"
-};
-
-const app = initializeApp(firebaseConfig);
-try { getAnalytics(app); } catch (e) { /* Analytics اختياري */ }
-const db = getFirestore(app);
 window.db = db;
 
-/* Firebase Authentication — الجلسة بتخزن في sessionStorage */
-const auth = getAuth(app);
-try { setPersistence(auth, browserSessionPersistence); } catch (e) { }
+/* طبقة البيانات (Firestore) */
+const FS = createFirestoreService(db, { auth: auth, emailDomain: AUTH_EMAIL_DOMAIN });
+/* طبقة المصادقة (Firebase Auth + القائمة المعتمدة) */
+const AU = createAuthService(auth, FS);
+/* ربط الطبقتين: عمليات الـ re-auth تروح لخدمة المصادقة */
+FS.authService = AU;
+/* خدمة المنيو (CRUD + استيراد Excel) */
+const MENU = createMenuService(FS, db);
 
-/* ============================================================
-   App Check (طبقة حماية إضافية — اختيارية)
-   ------------------------------------------------------------
-   بتمنع أي عميل مش متصفح (سكربت/سيرفر) من استخدام المشروع حتى لو
-   الـ API Key اتسرّب. بتحتاج:
-     1) Firebase Console → App Check → سجّل reCAPTCHA v3 (أو reCAPTCHA Enterprise)
-     2) انسخ مفتاح الموقع وضيفه هنا
-   لو سيبتها فاضية → التطبيق بيشتغل عادي (مفيش أي تعطيل).
-   ============================================================ */
-const APP_CHECK_SITE_KEY = '';   // ← مفتاح reCAPTCHA v3 من Console (اتركه فاضي لو مش هتفعّلها)
-if (APP_CHECK_SITE_KEY) {
-  import('https://www.gstatic.com/firebasejs/13.2.0/firebase-app-check.js')
-    .then(function (m) {
-      return m.initializeAppCheck(app, {
-        provider: new m.ReCaptchaV3Provider(APP_CHECK_SITE_KEY),
-        isTokenAutoRefreshEnabled: true
-      });
-    })
-    .catch(function (e) { console.warn('[AppCheck] تعذر التفعيل:', e && e.message); });
-}
-
-const FB = createBackend(db, { auth: auth, emailDomain: 'item-f8564.firebaseapp.com' });
-window.FB = FB;   /* الفحص والتصحيح من الكونسول */
+/* الواجهة بتستدعي الخدمات مباشرة: FS (بيانات) + AU (مصادقة) + MENU (منيو) */
+window.FS = FS; window.AU = AU; window.MENU = MENU;   /* الفحص والتصحيح من الكونسول */
 
 /* =====================================================
-   أدوات تسجيل الدخول (Firebase Authentication)
+   أدوات تسجيل الدخول (عرض فقط — المنطق في auth-service)
    ===================================================== */
-/* المستخدم ممكن يكتب الإيميل كامل، أو الاسم بس (بنضيف دومين المشروع) */
-function authEmail(input){
-  var v=String(input||'').trim().toLowerCase();
-  if(!v) return '';
-  if(v.indexOf('@')>=0) return v;
-  return v+'@item-f8564.firebaseapp.com';
-}
-/* أخطاء Firebase اللي معناها "الحساب مش موجود" (مش كلمة سر غلط) */
-function isUnknownAccount(e){
-  var c=(e && e.code)?String(e.code):'';
-  return c==='auth/user-not-found'||c==='auth/invalid-credential'||c==='auth/wrong-password';
-}
-function isEmailInUse(e){
-  return (e && e.code)==='auth/email-already-in-use';
-}
-/* رسائل أخطاء Firebase Auth بالعربي */
-function authErrorMessage(e){
-  var code=(e && e.code)?String(e.code):'';
-  var map={
-    'auth/invalid-credential':'اسم المستخدم أو كلمة السر غلط.',
-    'auth/user-not-found':'اسم المستخدم أو كلمة السر غلط.',
-    'auth/wrong-password':'اسم المستخدم أو كلمة السر غلط.',
-    'auth/invalid-email':'الإيميل مش صالح.',
-    'auth/email-already-in-use':'الحساب ده موجود بالفعل.',
-    'auth/weak-password':'كلمة السر ضعيفة — لازم 6 حروف على الأقل.',
-    'auth/too-many-requests':'محاولات كتير في وقت قصير. استنى شوية وجرّب تاني.',
-    'auth/network-request-failed':'تعذر الاتصال بالإنترنت. حاول تاني.',
-    'auth/user-disabled':'الحساب ده موقوف. كلّم مدير النظام.',
-    'auth/operation-not-allowed':'تسجيل الدخول بالإيميل مش مفعّل. من Firebase Console: Authentication ▸ Sign-in method ▸ Email/Password ▸ Enable.',
-    'auth/configuration-not-found':'Firebase Authentication مش مهيّأ في المشروع. فعّل Email/Password من الـ Console.',
-    'auth/popup-closed-by-user':'تم إغلاق النافذة.',
-    'auth/captcha-check-failed':'فشل التحقق. حاول تاني.',
-    /* أخطاء Firestore (صلاحيات القواعد) */
-    'permission-denied':'قواعد Firestore بتمنع العملية. انشر القواعد المحدثة: firebase deploy --only firestore:rules (والمجموعة المسموحة لازم فيها allow read, write).',
-    'unavailable':'تعذر الوصول لقاعدة البيانات دلوقتي. اتأكد من الاتصال وحاول تاني.',
-    'failed-precondition':'العملية اترفضت من قاعدة البيانات. حدّث الصفحة وحاول تاني.',
-    'unauthenticated':'انتهت الجلسة. سجّل دخول تاني.'
-  };
-  if(map[code]) return map[code];
-  var raw=(e && e.message)?String(e.message):'';
-  if(/insufficient permissions/i.test(raw)) return map['permission-denied'];
-  if(raw && /[\u0600-\u06FF]/.test(raw)) return raw;
-  return 'تعذر تسجيل الدخول. حاول تاني.';
-}
 
 /* =====================================================
    الحالة العامة
@@ -985,7 +920,7 @@ function api(fn, args, ok, fail){
     if(fail) fail(e); else toastErr(e);
   }
   try{
-    FB.api(fn, args||[], TOKEN).then(success, failure);
+    FS.api(fn, args||[], TOKEN).then(success, failure);
   }catch(e){ failure(e); }
 }
 
@@ -1174,7 +1109,7 @@ function startPolling(){
   LIVE.rev=''; LIVE.notifIds={}; LIVE.notifReady=false;
   loadNotifications(true);
   /* بدل الاستطلاع: مستمع لحظي واحد (onSnapshot) على كل مجموعات Firestore */
-  RT_UNSUB = FB.watch(
+  RT_UNSUB = FS.watch(
     function(d, live){
       if(!d) return;
       setData(d);
@@ -2795,127 +2730,7 @@ function renderReports(rows){
   });
 }
 
-/* ---------- كاتب Excel (.xlsx) بدون أي مكتبة خارجية ---------- */
-var CRC_T=null;
-function crcTable_(){
-  if(CRC_T) return CRC_T;
-  CRC_T=new Uint32Array(256);
-  for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); CRC_T[n]=c>>>0; }
-  return CRC_T;
-}
-function crc32_(buf){ var t=crcTable_(), c=0xFFFFFFFF; for(var i=0;i<buf.length;i++) c=t[(c^buf[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
-function zipStore_(files){
-  var enc=new TextEncoder(), parts=[], central=[], offset=0;
-  function u16(n){ return [n&255,(n>>>8)&255]; }
-  function u32(n){ return [n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255]; }
-  var DOS_DATE=20513;   // 2020-01-01
-  files.forEach(function(f){
-    var name=enc.encode(f.name), data=f.data, crc=crc32_(data);
-    var hdr=new Uint8Array([].concat([0x50,0x4b,0x03,0x04],u16(20),u16(0),u16(0),u16(0),u16(DOS_DATE),
-      u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0)));
-    parts.push(hdr,name,data);
-    central.push({name:name,crc:crc,size:data.length,off:offset});
-    offset+=hdr.length+name.length+data.length;
-  });
-  var cd=[], cdStart=offset, cdLen=0;
-  central.forEach(function(f){
-    var hdr=new Uint8Array([].concat([0x50,0x4b,0x01,0x02],u16(20),u16(20),u16(0),u16(0),u16(0),u16(DOS_DATE),
-      u32(f.crc),u32(f.size),u32(f.size),u16(f.name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(f.off)));
-    cd.push(hdr,f.name); cdLen+=hdr.length+f.name.length;
-  });
-  var end=new Uint8Array([].concat([0x50,0x4b,0x05,0x06],u16(0),u16(0),u16(central.length),u16(central.length),
-    u32(cdLen),u32(cdStart),u16(0)));
-  return new Blob(parts.concat(cd,[end]),{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-}
-function xmlEsc_(s){
-  return String(s==null?'':s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'')
-    .replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]; });
-}
-function colLetter_(n){ var s=''; n++; while(n>0){ var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
-/* حماية من حقن الصيغ في Excel: أي نص بيبدأ بـ = + - @ أو محارف تحكم
-   بيتحوّل لنص عادي (prefixed بـ ') عشان ما يفتحش فورمولا عند الفتح. */
-function xlsxSafe_(v){
-  var s=String(v==null?'':v);
-  if(/^[=+\-@\t\r]/.test(s)) s="'"+s;
-  return s;
-}
-function sheetName_(s){
-  var n=String(s||'Sheet').replace(/[\[\]\*\?\/\\:]/g,' ').replace(/\s+/g,' ').trim().slice(0,31);
-  return n||'Sheet';
-}
-function xlsxSheetXml_(rows){
-  var maxc=0;
-  rows.forEach(function(r){ if(r.length>maxc) maxc=r.length; });
-  var widths=[];
-  for(var c=0;c<maxc;c++){
-    var w=8;
-    rows.slice(0,120).forEach(function(r){ var v=r[c]; if(v==null) return; var len=String(v).length; if(len>w) w=len; });
-    widths.push(Math.min(45,Math.max(10,w+2)));
-  }
-  var cols='';
-  for(var c2=0;c2<widths.length;c2++) cols+='<col min="'+(c2+1)+'" max="'+(c2+1)+'" width="'+widths[c2]+'" customWidth="1"/>';
-  var out='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-    +'<sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-    +(cols?'<cols>'+cols+'</cols>':'')
-    +'<sheetData>';
-  rows.forEach(function(r,ri){
-    out+='<row r="'+(ri+1)+'">';
-    for(var ci=0;ci<r.length;ci++){
-      var v=r[ci];
-      if(v===null||v===undefined||v==='') continue;
-      var ref=colLetter_(ci)+(ri+1), st=ri===0?' s="1"':'';
-      if(typeof v==='number'&&isFinite(v)) out+='<c r="'+ref+'"'+st+'><v>'+v+'</v></c>';
-      else out+='<c r="'+ref+'"'+st+' t="inlineStr"><is><t xml:space="preserve">'+xmlEsc_(xlsxSafe_(v))+'</t></is></c>';
-    }
-    out+='</row>';
-  });
-  return out+'</sheetData></worksheet>';
-}
-function buildXlsxBlob_(sheets){
-  var enc=new TextEncoder(), files=[], names=[], used={};
-  sheets.forEach(function(s){
-    var base=sheetName_(s.name), nm=base, k=2;
-    while(used[nm.toLowerCase()]){ nm=(base.slice(0,28)+' '+(k++)).slice(0,31); }
-    used[nm.toLowerCase()]=1; names.push(nm);
-  });
-  var ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-    +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-    +'<Default Extension="xml" ContentType="application/xml"/>'
-    +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-    +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
-  sheets.forEach(function(s,i){ ct+='<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; });
-  ct+='</Types>';
-  files.push({name:'[Content_Types].xml', data:enc.encode(ct)});
-  files.push({name:'_rels/.rels', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
-
-  var wbSheets='';
-  names.forEach(function(n,i){ wbSheets+='<sheet name="'+xmlEsc_(n)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>'; });
-  files.push({name:'xl/workbook.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    +'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-    +'<sheets>'+wbSheets+'</sheets></workbook>')});
-
-  var rels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
-  names.forEach(function(n,i){ rels+='<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>'; });
-  rels+='<Relationship Id="rId'+(names.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
-  files.push({name:'xl/_rels/workbook.xml.rels', data:enc.encode(rels)});
-
-  files.push({name:'xl/styles.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    +'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-    +'<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
-    +'<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
-    +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
-    +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    +'<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
-    +'<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
-    +'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')});
-
-  sheets.forEach(function(s,i){
-    files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml', data:enc.encode(xlsxSheetXml_(s.rows||[]))});
-  });
-  return zipStore_(files);
-}
+/* ---------- تصدير Excel: البناء في خدمة Excel، والتحميل (Blob/DOM) هنا ---------- */
 function downloadXlsx(name, sheets){
   try{
     var blob=buildXlsxBlob_(sheets);
@@ -3042,6 +2857,68 @@ function actDeleteRestaurant(id){
 }
 
 /* ---------- إدارة المنيو ---------- */
+/* ============================================================
+   رفع المنيو من ملف Excel / CSV
+   ------------------------------------------------------------
+   • اختيار البراند (brandId) + نطاق الفروع (فرع واحد أو كل الفروع)
+   • قراءة الملف في خدمة Excel + التطبيع في خدمة المنيو
+   • الكتابة في Firestore عن طريق خدمة البيانات (مع احترام الصلاحيات)
+   ============================================================ */
+function actMenuImport(){
+  if(!needAdmin()) return;
+  var restaurants=(D.restaurants||[]).filter(function(r){return r.active!==false;});
+  if(!restaurants.length){ toast('لا توجد مطاعم نشطة.','warn'); return; }
+  var rest=restaurants.some(function(r){return r.id===S.rest;})?S.rest:restaurants[0].id;
+
+  var fillBranches=function(rid){
+    var list=(D.branches||[]).filter(function(b){return b.restaurant===rid;});
+    $('miBranch').innerHTML=branchOptionsHTML(rid, list.length?list[0].key:'', function(){return true;});
+  };
+
+  openModal('رفع المنيو من ملف Excel',
+    '<div class="cfg-note">الأعمدة المتوقعة: <b>الصنف</b> (إجباري) · <b>التصنيف</b> · <b>السعر</b> · <b>متاح</b> (نعم/لا). الملف بصيغة .xlsx أو .csv.</div>'
+    +'<label for="miRest">المطعم (البراند)</label><select id="miRest">'+restaurants.map(function(r){
+        return '<option value="'+esc(r.id)+'"'+(r.id===rest?' selected':'')+'>'+esc(r.name)+'</option>';
+      }).join('')+'</select>'
+    +'<label for="miScope">نطاق الفروع</label><select id="miScope">'
+      +'<option value="branch">فرع محدد بس</option>'
+      +'<option value="all">كل فروع المطعم دفعة واحدة</option>'
+      +'</select>'
+    +'<label for="miBranch">الفرع</label><select id="miBranch"></select>'
+    +'<label for="miFile">ملف المنيو</label><input id="miFile" type="file" accept=".xlsx,.csv,.txt">'
+    +'<p class="hint">الأصناف الموجودة بنفس الاسم هتتحدّث (السعر/التصنيف/التوفر)، والجديدة هتتنضاف.</p>',
+    'رفع المنيو',
+    function(){
+      if(!needAdmin()) return;
+      var file=($('miFile').files||[])[0];
+      var rid=$('miRest').value;
+      var scope=$('miScope').value;
+      var branchKeys;
+      if(scope==='all'){
+        branchKeys=(D.branches||[]).filter(function(b){return b.restaurant===rid;}).map(function(b){return b.key;});
+      }else{
+        branchKeys=[$('miBranch').value];
+      }
+      if(!file){ toast('اختار ملف Excel الأول','warn'); return; }
+      if(!branchKeys.length||!branchKeys[0]){ toast('اختار الفرع','warn'); return; }
+      var btn=$('mSubmit'); btn.disabled=true;
+      MENU.importFromFile(file, rid, branchKeys).then(function(res){
+        btn.disabled=false; closeModal();
+        toast('تم استيراد '+res.total+' صنف في '+res.branches.length+' فرع ('+res.written+' صف)','ok');
+        applyFresh(res);
+      }).catch(function(e){
+        btn.disabled=false;
+        $('lgErr') && 0;
+        toast((e && e.message)?e.message:'فشل استيراد الملف','err');
+      });
+    });
+  fillBranches(rest);
+  $('miRest').addEventListener('change',function(){ fillBranches(this.value); });
+  $('miScope').addEventListener('change',function(){
+    $('miBranch').disabled=(this.value==='all');
+  });
+}
+
 function actMenu(){
   var restaurants=(D.restaurants||[]).filter(function(r){return r.active!==false;});
   if(!restaurants.length){ toast('لا توجد مطاعم نشطة لإدارة المنيو.','warn'); return; }
@@ -3414,6 +3291,7 @@ document.querySelectorAll('#gearMenu button').forEach(function(b){
     else if(a==='logStop') actLogStop();
     else if(a==='restaurants') actRestaurants();
     else if(a==='menu') actMenu();
+    else if(a==='menuImport') actMenuImport();
     else if(a==='reasons') actReasons();
     else if(a==='rollover') actRollover();
     else if(a==='errors') actErrors();
@@ -3426,9 +3304,12 @@ document.querySelectorAll('#gearMenu button').forEach(function(b){
 });
 
 /* ============================================================
- *  تسجيل الدخول — Firebase Authentication مباشرة
- *  signInWithEmailAndPassword → (أول مرة) createUserWithEmailAndPassword
- *  → تجهيز الملف الشخصي في Firestore → دخول لوحة التحكم فورًا
+ *  تسجيل الدخول — Firebase Authentication + قائمة المعتمدين
+ *  ------------------------------------------------------------
+ *  1) signInWithEmailAndPassword  (بدون أي تسجيل تلقائي — ممنوع إنشاء حساب)
+ *  2) التحقق فورًا: الإيميل لازم يكون مسجّل ومفعّل في collection "users"
+ *  3) لو غير مسجّل / موقوف → signOut + رسالة واضحة
+ *  4) لو مسجّل → توجيه للوحة التحكم حسب الدور (management / branch / agent)
  * ============================================================ */
 $('loginForm').addEventListener('submit',function(e){
   e.preventDefault();
@@ -3441,33 +3322,16 @@ $('loginForm').addEventListener('submit',function(e){
   $('lgBtn').disabled=true; $('lgErr').textContent=''; loading(true);
   LOGIN_PENDING=true;
 
-  /* 1) مصادقة Firebase Auth */
-  var fbUser=null, isNew=false;
-  signInWithEmailAndPassword(auth, email, p).then(function(cred){
-    fbUser=cred && cred.user ? cred.user : null;
-  }).catch(function(err){
-    /* الحساب مش موجود → ننشئه أول مرة بنفس الباسورد */
-    if(!isUnknownAccount(err)) throw err;
-    return createUserWithEmailAndPassword(auth, email, p).then(function(cred){
-      fbUser=cred && cred.user ? cred.user : null;
-      isNew=true;
-    }).catch(function(err2){
-      if(isEmailInUse(err2)){ var w=new Error('اسم المستخدم أو كلمة السر غلط.'); w.code='auth/invalid-credential'; throw w; }
-      throw err2;
-    });
-  }).then(function(){
-    /* 2) الملف الشخصي + البذرة + الداتا (من Firestore) */
-    return FB.adoptAuthenticatedUser(fbUser, u);
-  }).then(function(res){
+  /* 1) مصادقة Firebase Auth + بوابة القائمة المعتمدة (كله في auth-service) */
+  AU.login(u, p).then(function(res){
     LOGIN_PENDING=false;
     loading(false); $('lgBtn').disabled=false; $('lgPass').value='';
     if(!res || res.blocked){
-      /* الحساب موقوف أو محتاج تفعيل → نخرج من الجلسة ونشرح السبب */
-      try{ signOut(auth); }catch(e){}
-      $('lgErr').textContent=(res && res.message) ? res.message : 'حسابك موقوف. كلّم مدير النظام.';
+      /* الحساب مش في القائمة المعتمدة / موقوف → خروج فوري من Firebase Auth */
+      $('lgErr').textContent=(res && res.message) ? res.message : 'عذراً، هذا البريد غير مسجل أو بانتظار موافقة الإدارة.';
       return;
     }
-    /* 3) دخول لوحة التحكم فورًا */
+    /* 2) دخول لوحة التحكم حسب الدور والفروع */
     TOKEN=res.token||''; saveToken();
     onData(res.data);
   }).catch(function(err){
@@ -3477,7 +3341,7 @@ $('loginForm').addEventListener('submit',function(e){
   });
 });
 $('logoutBtn').addEventListener('click',function(){
-  try{ FB.logout(); }catch(e){}
+  try{ AU.logout(); }catch(e){}
   toLogin('');
 });
 
@@ -3571,16 +3435,16 @@ function stopSessionGuard(){
 }
 
 /* البداية: نستعيد جلسة Firebase Auth (لو موجودة) وإلا شاشة الدخول */
-FB.restore(TOKEN).then(function(ok){
+AU.restore().then(function(ok){
   if(ok){ load(false); startSessionGuard(); }
   else { TOKEN=''; saveToken(); toLogin(''); }
 }).catch(function(){ TOKEN=''; saveToken(); toLogin(''); });
 
 /* لو الحساب اتقفل أو اتسجل خروج من جهاز تاني → رجوع لشاشة الدخول فورًا */
-FB.onAuthChange(function(user){
+AU.onAuthChange(function(user){
   if(user && !D && !LOGIN_PENDING){
     /* الجلسة اتستعيدت بعد ما الصفحة فتحت → ادخل الداشبورد */
-    FB.restore(TOKEN).then(function(ok){ if(ok){ load(false); startSessionGuard(); } });
+    AU.restore().then(function(ok){ if(ok){ load(false); startSessionGuard(); } });
     return;
   }
   if(!user && D){ stopSessionGuard(); toLogin('انتهت الجلسة، سجّل دخول تاني.'); }
@@ -3590,8 +3454,8 @@ FB.onAuthChange(function(user){
 document.addEventListener('visibilitychange',function(){
   if(document.hidden) return;
   if(!D) return;
-  if(!window.FB || !window.FB.auth) return;
-  var u=window.FB.auth.currentUser;
+  if(!AU || !AU.auth) return;
+  var u=AU.auth.currentUser;
   if(!u){ stopSessionGuard(); toLogin('انتهت الجلسة، سجّل دخول تاني.'); return; }
   api('checkSession',[],function(){},function(e){
     var p=null; try{ p=parseErr(e); }catch(_){}
